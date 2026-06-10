@@ -10,10 +10,12 @@
   /* ===========================================================================
      CONFIGURATION
      =========================================================================== */
+  const ENV = window.JARVIS_CONFIG || {};
   const CFG = {
-    OPENROUTER_KEY: "sk_535a8cd0bf2572e2e682a6129d16b860a039511b60f823f1",
-    ELEVENLABS_AGENT_ID: "agent_9101kts3htsyf76bmst2hx7k85dv",
-    ELEVENLABS_VOICE: "TxGEqnHWrfWFTfGW9XjX",
+    OPENROUTER_KEY: ENV.OPENROUTER_KEY || "",
+    ELEVENLABS_API_KEY: ENV.ELEVENLABS_API_KEY || "",
+    ELEVENLABS_AGENT_ID: ENV.ELEVENLABS_AGENT_ID || "",
+    ELEVENLABS_VOICE: ENV.ELEVENLABS_VOICE || "TxGEqnHWrfWFTfGW9XjX",
     WAKE_WORD: "jarvis",
     LLM_MODEL: "google/gemini-2.0-flash-exp:free",
     FOLLOW_UP_MS: 5000,
@@ -146,6 +148,9 @@
   }
 
   function askLLM(text) {
+    if (!CFG.OPENROUTER_KEY) {
+      return Promise.resolve({ text: fallbackAnswer(text), intent: localIntent(text) });
+    }
     var msgs = [{ role: "system", content: systemPrompt() }];
     memory.slice(-6).forEach(function (m) { msgs.push({ role: m.role, content: m.content }); });
     msgs.push({ role: "user", content: text });
@@ -295,9 +300,10 @@
   }
 
   function elevenLabsTTS(text) {
+    if (!CFG.ELEVENLABS_API_KEY) return Promise.resolve(false);
     return fetch("https://api.elevenlabs.io/v1/text-to-speech/" + CFG.ELEVENLABS_VOICE + "/stream", {
       method: "POST",
-      headers: { "xi-api-key": CFG.OPENROUTER_KEY, "Content-Type": "application/json" },
+      headers: { "xi-api-key": CFG.ELEVENLABS_API_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({ text: text, model_id: "eleven_multilingual_v2", voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.0, use_speaker_boost: true } }),
     })
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.blob(); })

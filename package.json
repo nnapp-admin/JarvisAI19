@@ -1,0 +1,13 @@
+{
+  "name": "jarvis-ai19",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Facility19 Jarvis Command Center — cinematic 3D voice OS demo",
+  "scripts": {
+    "build": "node scripts/inject-env.js",
+    "dev": "npx --yes serve . -l 8765"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
