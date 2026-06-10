@@ -144,6 +144,69 @@
     return localIntent(text);
   }
 
+  /* ===========================================================================
+     ACTION INTENT DETECTION — natural language control of sound, engine, display
+     =========================================================================== */
+  var VALID_ACTIONS = ["sound_on", "sound_off", "idle_on", "idle_off", "stop"];
+
+  function detectAction(text) {
+    if (!text) return null;
+    var lo = text.toLowerCase();
+
+    var wantsOff = /\b(stop|off|mute|silence|quiet|disable|pause|shut|kill|end|no more|enough|cease|halt|cut)\b/.test(lo);
+    var wantsOn = /\b(start|on|play|enable|resume|unmute|turn on|bring back|activate|begin|launch)\b/.test(lo);
+
+    var aboutSound = /\b(sound|audio|music|background|drone|ambient|noise|volume|soundtrack|tune|tone|hum|engine sound)\b/.test(lo);
+    var aboutDisplay = /\b(cycling|cycle|rotate|rotation|idle|auto|automatic|carousel|slideshow|looping|switching|changing|display|screen change|transition)\b/.test(lo);
+    var aboutEverything = /\b(everything|all|whole thing|entire|the system)\b/.test(lo);
+
+    if (aboutSound && wantsOff) return "sound_off";
+    if (aboutSound && wantsOn) return "sound_on";
+    if (aboutDisplay && wantsOff) return "idle_off";
+    if (aboutDisplay && wantsOn) return "idle_on";
+    if (aboutEverything && wantsOff) return "stop";
+
+    if (/\b(be quiet|shut up|stop talking|silence)\b/.test(lo)) return "sound_off";
+    if (/\b(stay (here|on this)|keep this|hold this|don'?t (move|change|switch)|freeze|lock this)\b/.test(lo)) return "idle_off";
+
+    return null;
+  }
+
+  function executeAction(action) {
+    var UI = window.JARVIS_UI;
+    var soundBadge = document.getElementById("b-sound");
+
+    switch (action) {
+      case "sound_off":
+        if (A) A.toggle(false);
+        if (soundBadge) { soundBadge.classList.add("off"); var ss = document.getElementById("sound-state"); if (ss) ss.textContent = "OFF"; }
+        return "Done. I have muted all audio — the background ambience and sound effects are off. Just ask me to turn them back on whenever you like.";
+
+      case "sound_on":
+        if (A) { if (!A.ready) A.start(); A.resume(); A.toggle(true); }
+        if (soundBadge) { soundBadge.classList.remove("off"); var ss2 = document.getElementById("sound-state"); if (ss2) ss2.textContent = "ON"; }
+        return "Audio is back on. You should hear the ambient soundscape now. Let me know if you want to adjust anything else.";
+
+      case "idle_off":
+        if (UI && UI.stopIdleCycle) UI.stopIdleCycle();
+        return "I have stopped the automatic scene rotation. The display will stay on the current view until you ask me to show something else or resume cycling.";
+
+      case "idle_on":
+        if (UI && UI.startIdleCycle) UI.startIdleCycle();
+        return "Automatic scene cycling is back on. I will rotate through the different views to keep the display lively. Say stop anytime.";
+
+      case "stop":
+        if (A) A.toggle(false);
+        if (soundBadge) { soundBadge.classList.add("off"); var ss3 = document.getElementById("sound-state"); if (ss3) ss3.textContent = "OFF"; }
+        if (UI && UI.stopIdleCycle) UI.stopIdleCycle();
+        if (UI && UI.clearHighlights) UI.clearHighlights();
+        return "Everything is paused — audio off, scene cycling stopped, display locked. Just speak up when you want me to bring things back.";
+
+      default:
+        return null;
+    }
+  }
+
   function money(v) {
     return "$" + Number(v || 0).toLocaleString();
   }
@@ -357,17 +420,28 @@
       "- For general questions not about Facility19 data, answer naturally and helpfully like a high-quality assistant.\n" +
       "- For identity questions, explain you are their personal AI executive assistant for Facility19, capable of detailed metric analysis, strategic guidance, and general assistance.\n" +
       "- Aim for thorough but spoken-length answers (5-12 sentences for data questions, 2-5 for general questions). Do not be terse.\n\n" +
-      "NAVIGATION RULES:\n" +
-      "- End your response with a JSON tag on its own line: {\"scene\":\"name\"} where name is one of: revenue, attribution, growth, leakage, agents, health, customers, forecast, feed, facility19 — or null.\n" +
+      "NAVIGATION AND ACTION RULES:\n" +
+      "- End your response with a JSON tag on its own line: {\"scene\":\"name\",\"action\":\"action_name\"}\n" +
+      "- scene: one of revenue, attribution, growth, leakage, agents, health, customers, forecast, feed, facility19, or null.\n" +
+      "- action: one of sound_on, sound_off, idle_on, idle_off, stop, or null.\n" +
       "- ALWAYS set scene to the most relevant visualization for what you are discussing. The user interacts entirely by voice — there are no buttons. You control what appears on screen.\n" +
       "- If the user asks about revenue, set scene to 'revenue'. If they ask about customers, set scene to 'customers'. Always match the visual to the topic.\n" +
-      "- Only set scene to null for greetings, identity questions, or truly general questions with no Facility19 data relevance.";
+      "- Only set scene to null for greetings, identity questions, control commands, or truly general questions.\n" +
+      "- ACTIONS: If the user asks to mute/stop/turn off sound/music/audio/background, set action to 'sound_off'. If they ask to turn it on/play/resume, set action to 'sound_on'. If they ask to stop the screen cycling/rotation/auto switching, set action to 'idle_off'. If they ask to start/resume it, set action to 'idle_on'. If they ask to stop everything, set action to 'stop'.\n" +
+      "- Understand intent naturally. 'Be quiet' or 'silence the background' means sound_off. 'Stay on this screen' or 'keep this view' means idle_off. 'Turn the music back on' means sound_on. Do not require exact phrases.";
   }
 
   function askLLM(text) {
     var detectedIntent = localIntent(text);
+    var detectedAction = detectAction(text);
+
+    if (detectedAction) {
+      var actionMsg = executeAction(detectedAction);
+      if (actionMsg) return Promise.resolve({ text: actionMsg, intent: null, action: detectedAction });
+    }
+
     if (!CFG.OPENROUTER_KEY) {
-      return Promise.resolve({ text: fallbackAnswer(text), intent: detectedIntent });
+      return Promise.resolve({ text: fallbackAnswer(text), intent: detectedIntent, action: null });
     }
     var msgs = [{ role: "system", content: systemPrompt() }];
     memory.slice(-6).forEach(function (m) { msgs.push({ role: m.role, content: m.content }); });
@@ -381,14 +455,22 @@
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(function (d) {
         var raw = (d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || "";
-        var im = raw.match(/\{"scene"\s*:\s*(null|"(\w+)")\}/i);
+        var im = raw.match(/\{[^}]*"scene"\s*:\s*(null|"(\w+)")[^}]*\}/i);
         var llmIntent = im ? (im[2] || null) : null;
+        var am = raw.match(/\{[^}]*"action"\s*:\s*(null|"(\w+)")[^}]*\}/i);
+        var llmAction = am ? (am[2] || null) : null;
         var intent = resolveNavigationIntent(text, llmIntent);
-        var clean = raw.replace(/\s*\{[^}]*"scene"[^}]*\}\s*$/, "").trim();
-        return { text: clean || fallbackAnswer(text), intent: intent };
+        var clean = raw.replace(/\s*\{[^}]*"scene"[^}]*\}\s*$/m, "").trim();
+
+        if (llmAction && VALID_ACTIONS.indexOf(llmAction) !== -1) {
+          var actionResult = executeAction(llmAction);
+          if (actionResult && !clean) clean = actionResult;
+        }
+
+        return { text: clean || fallbackAnswer(text), intent: intent, action: llmAction };
       })
       .catch(function () {
-        return { text: fallbackAnswer(text), intent: detectedIntent };
+        return { text: fallbackAnswer(text), intent: detectedIntent, action: null };
       });
   }
 
