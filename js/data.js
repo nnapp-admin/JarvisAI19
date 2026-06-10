@@ -17,23 +17,26 @@
     netNew:     2840,
     inProduct:  10,
     confidence: 91,
+    prevMRR:    11800,
+    delta:      { mrr: +11.9, arr: +11.9, netNew: +22, progress: +8, confidence: +3 },
+    spark:      [8200, 8900, 9600, 10400, 11100, 11800, 13200],
   };
 
   // ---- Revenue attribution (sums to CURRENT_MRR) --------------------------
   const channels = [
-    { id: "li",   name: "LINKEDIN OUTBOUND", mrr: 5940, pct: 45, hue: 205, deals: 142 },
-    { id: "inb",  name: "INBOUND / ORGANIC", mrr: 2640, pct: 20, hue: 150, deals: 74  },
-    { id: "ref",  name: "REFERRAL",          mrr: 1980, pct: 15, hue: 270, deals: 58  },
-    { id: "paid", name: "PAID SOCIAL",        mrr: 1320, pct: 10, hue: 35,  deals: 28  },
-    { id: "part", name: "PARTNERSHIPS",       mrr: 1320, pct: 10, hue: 320, deals: 20  },
+    { id: "li",   name: "LINKEDIN OUTBOUND", mrr: 5940, pct: 45, hue: 205, deals: 142, delta: +8,  spark: [4200,4600,4900,5200,5500,5940] },
+    { id: "inb",  name: "INBOUND / ORGANIC", mrr: 2640, pct: 20, hue: 150, deals: 74,  delta: +14, spark: [1800,1900,2100,2200,2400,2640] },
+    { id: "ref",  name: "REFERRAL",          mrr: 1980, pct: 15, hue: 270, deals: 58,  delta: +6,  spark: [1500,1600,1650,1700,1820,1980] },
+    { id: "paid", name: "PAID SOCIAL",        mrr: 1320, pct: 10, hue: 35,  deals: 28,  delta: -3,  spark: [1500,1480,1400,1350,1340,1320] },
+    { id: "part", name: "PARTNERSHIPS",       mrr: 1320, pct: 10, hue: 320, deals: 20,  delta: +18, spark: [800,900,1000,1100,1200,1320]  },
   ];
 
   // ---- Growth engine funnel ----------------------------------------------
   const funnel = [
-    { id: "inmail",   label: "INMAIL SENT",     count: 4210, hue: 205 },
-    { id: "connect",  label: "CONNECTIONS",     count: 1840, hue: 195 },
-    { id: "reply",    label: "REPLIES",         count: 342,  hue: 165 },
-    { id: "meeting",  label: "MEETINGS BOOKED", count: 29,   hue: 145 },
+    { id: "inmail",   label: "INMAIL SENT",     count: 4210, hue: 205, prev: 3800, delta: +10.8 },
+    { id: "connect",  label: "CONNECTIONS",     count: 1840, hue: 195, prev: 1620, delta: +13.6 },
+    { id: "reply",    label: "REPLIES",         count: 342,  hue: 165, prev: 298,  delta: +14.8 },
+    { id: "meeting",  label: "MEETINGS BOOKED", count: 29,   hue: 145, prev: 22,   delta: +31.8 },
   ];
   // conversion between stages, computed
   funnel.forEach((s, i) => {
@@ -42,9 +45,9 @@
 
   // ---- Opportunity leakage -----------------------------------------------
   const leaks = [
-    { stage: "INMAIL → CONNECTION", lost: 2370, reason: "NO RESPONSE",        valueLost: 3100, sev: 0.62 },
-    { stage: "CONNECTION → REPLY",  lost: 1498, reason: "WEAK PERSONALIZATION", valueLost: 3800, sev: 0.81 },
-    { stage: "REPLY → MEETING",     lost: 313,  reason: "TIMING / NO-SHOW",    valueLost: 1500, sev: 0.44 },
+    { stage: "INMAIL → CONNECTION", lost: 2370, reason: "NO RESPONSE",        valueLost: 3100, sev: 0.62, delta: -4,  trend: "improving" },
+    { stage: "CONNECTION → REPLY",  lost: 1498, reason: "WEAK PERSONALIZATION", valueLost: 3800, sev: 0.81, delta: +12, trend: "worsening" },
+    { stage: "REPLY → MEETING",     lost: 313,  reason: "TIMING / NO-SHOW",    valueLost: 1500, sev: 0.44, delta: -8,  trend: "improving" },
   ];
   const leakTotal = leaks.reduce((a, l) => a + l.valueLost, 0); // 8,400
 
@@ -64,13 +67,15 @@
   // ---- Outbound system health --------------------------------------------
   const health = {
     score: 86,
+    prevScore: 82,
+    delta: +4,
     systems: [
-      { name: "LINKEDIN API",  status: "ok",   v: 99.2, unit: "%",  note: "UPTIME" },
-      { name: "GHL CRM SYNC",  status: "ok",   v: 34,   unit: "ms", note: "LATENCY" },
-      { name: "EMAIL DELIVER", status: "ok",   v: 97.4, unit: "%",  note: "INBOX RATE" },
-      { name: "QUEUE BACKLOG", status: "warn", v: 218,  unit: "",   note: "PENDING" },
-      { name: "ERROR RATE",    status: "ok",   v: 0.4,  unit: "%",  note: "24H" },
-      { name: "LI SAFETY",     status: "warn", v: 81,   unit: "%",  note: "HEADROOM" },
+      { name: "LINKEDIN API",  status: "ok",   v: 99.2, unit: "%",  note: "UPTIME",     prev: 99.0, delta: +0.2 },
+      { name: "GHL CRM SYNC",  status: "ok",   v: 34,   unit: "ms", note: "LATENCY",    prev: 42,   delta: -19  },
+      { name: "EMAIL DELIVER", status: "ok",   v: 97.4, unit: "%",  note: "INBOX RATE", prev: 96.8, delta: +0.6 },
+      { name: "QUEUE BACKLOG", status: "warn", v: 218,  unit: "",   note: "PENDING",    prev: 185,  delta: +18  },
+      { name: "ERROR RATE",    status: "ok",   v: 0.4,  unit: "%",  note: "24H",        prev: 0.6,  delta: -33  },
+      { name: "LI SAFETY",     status: "warn", v: 81,   unit: "%",  note: "HEADROOM",   prev: 88,   delta: -8   },
     ],
   };
 
@@ -81,22 +86,26 @@
     arpu: 41,
     churn: 3.1,
     nrr: 112,
+    delta: { total: +12, subs: +18, arpu: +3, churn: -0.4, nrr: +2 },
+    spark: [240,260,278,290,305,322],
     tiers: [
-      { name: "ENTERPRISE", count: 18,  mrr: 5200, hue: 45  },
-      { name: "GROWTH",     count: 96,  mrr: 5400, hue: 195 },
-      { name: "STARTUP",    count: 208, mrr: 2600, hue: 270 },
+      { name: "ENTERPRISE", count: 18,  mrr: 5200, hue: 45,  delta: +2  },
+      { name: "GROWTH",     count: 96,  mrr: 5400, hue: 195, delta: +8  },
+      { name: "STARTUP",    count: 208, mrr: 2600, hue: 270, delta: +2  },
     ],
     top: [
       { name: "NORTHWIND", mrr: 1100, pct: 8.3 },
       { name: "ARCADIA",   mrr: 720,  pct: 5.5 },
       { name: "MERIDIAN",  mrr: 540,  pct: 4.1 },
     ],
-    concentration: 17.9, // top 3 share %
+    concentration: 17.9,
   };
 
   // ---- Forecast (next month) ---------------------------------------------
   const forecast = {
     confidence: 82,
+    prevConf:   78,
+    delta:      { conf: +4, mrr: +21.6 },
     mrr:        { likely: 16050, low: 14100, high: 18200 },
     newCust:    { likely: 38,    low: 26,    high: 51 },
     churn:      { likely: 11,    low: 7,     high: 16 },
