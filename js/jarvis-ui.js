@@ -537,9 +537,32 @@
   });
 
   let activeScene = null;
+  var pendingVoiceRun = null;
+
   function run(scene, opts) {
     opts = opts || {};
-    if (J.transitioning || (scene === activeScene && !opts.fromVoice)) return;
+
+    if (J.transitioning) {
+      if (opts.fromVoice) {
+        pendingVoiceRun = { scene: scene, opts: opts };
+        var waitForTransition = setInterval(function() {
+          if (!J.transitioning) {
+            clearInterval(waitForTransition);
+            pendingVoiceRun = null;
+            doRun(scene, opts);
+          }
+        }, 100);
+        setTimeout(function() { clearInterval(waitForTransition); pendingVoiceRun = null; }, 3000);
+      }
+      return;
+    }
+
+    if (scene === activeScene && !opts.fromVoice && !opts.silent) return;
+
+    doRun(scene, opts);
+  }
+
+  function doRun(scene, opts) {
     const cmd = cmdById[scene];
     if (!cmd) return;
     activeScene = scene;
@@ -637,23 +660,28 @@
   var idleCycleTimer = null;
   var idleScenes = ["revenue", "attribution", "growth", "customers", "forecast", "health", "agents", "facility19"];
   var idleIdx = 0;
+  var idlePaused = false;
 
   function startIdleCycle() {
     stopIdleCycle();
+    idlePaused = false;
     idleCycleTimer = setInterval(function() {
-      if (activeScene === "home" || !activeScene) {
-        var scene = idleScenes[idleIdx % idleScenes.length];
-        idleIdx++;
-        run(scene, { fromVoice: true, silent: true });
-      }
+      if (idlePaused) return;
+      var scene = idleScenes[idleIdx % idleScenes.length];
+      idleIdx++;
+      run(scene, { fromVoice: true, silent: true });
     }, 18000);
   }
 
   function stopIdleCycle() {
+    idlePaused = true;
     if (idleCycleTimer) { clearInterval(idleCycleTimer); idleCycleTimer = null; }
   }
 
-  window.JARVIS_UI = { run: run, narrate: narrate, setHue: setHue, setCtx: setCtx, engage: engageSystem, highlightCard: highlightCard, highlightLabel: highlightLabel, sequenceHighlights: sequenceHighlights, clearHighlights: clearHighlights, startIdleCycle: startIdleCycle, stopIdleCycle: stopIdleCycle };
+  function pauseIdleCycle() { idlePaused = true; }
+  function resumeIdleCycle() { idlePaused = false; if (!idleCycleTimer) startIdleCycle(); }
+
+  window.JARVIS_UI = { run: run, narrate: narrate, setHue: setHue, setCtx: setCtx, engage: engageSystem, highlightCard: highlightCard, highlightLabel: highlightLabel, sequenceHighlights: sequenceHighlights, clearHighlights: clearHighlights, startIdleCycle: startIdleCycle, stopIdleCycle: stopIdleCycle, pauseIdleCycle: pauseIdleCycle, resumeIdleCycle: resumeIdleCycle };
 
   document.addEventListener("click", function ensureAudio() {
     if (A) { if (!A.ready) A.start(); else A.resume(); }

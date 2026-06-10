@@ -668,13 +668,14 @@
     setState(S.THINK);
     hideTranscript();
     if (A) { A.resume(); A.play("process"); }
-    if (window.JARVIS_UI && window.JARVIS_UI.stopIdleCycle) window.JARVIS_UI.stopIdleCycle();
+    var UI = window.JARVIS_UI;
+    if (UI && UI.pauseIdleCycle) UI.pauseIdleCycle();
 
     askLLM(text).then(function (result) {
       remember("assistant", result.text);
       var didNavigate = false;
-      if (result.intent && window.JARVIS_UI) {
-        window.JARVIS_UI.run(result.intent, { fromVoice: true });
+      if (result.intent && UI) {
+        UI.run(result.intent, { fromVoice: true });
         didNavigate = true;
       }
       setTimeout(function () { speak(result.text); }, didNavigate ? 600 : 100);
@@ -705,9 +706,10 @@
     hideTranscript();
     setState(S.IDLE);
     startWake();
-    if (window.JARVIS_UI && window.JARVIS_UI.clearHighlights) window.JARVIS_UI.clearHighlights();
+    var UI = window.JARVIS_UI;
+    if (UI && UI.clearHighlights) UI.clearHighlights();
     setTimeout(function() {
-      if (window.JARVIS_UI && window.JARVIS_UI.startIdleCycle) window.JARVIS_UI.startIdleCycle();
+      if (UI && UI.resumeIdleCycle) UI.resumeIdleCycle();
     }, 8000);
   }
 
