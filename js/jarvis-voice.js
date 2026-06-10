@@ -74,15 +74,40 @@
      =========================================================================== */
   function buildKB() {
     return {
-      revenue: { current_mrr: D.revenue.currentMRR, target: D.revenue.targetMRR, progress: D.revenue.progress + "%", arr: D.revenue.arr, net_new: D.revenue.netNew, confidence: D.revenue.confidence + "%" },
-      channels: D.channels.map(function (c) { return { name: c.name, mrr: c.mrr, pct: c.pct + "%" }; }),
-      funnel: D.funnel.map(function (s) { return { stage: s.label, count: s.count, conv: s.conv + "%" }; }),
-      leakage: { total: D.leakTotal, fractures: D.leaks.map(function (l) { return { stage: l.stage, lost: l.valueLost, reason: l.reason }; }) },
-      agents: D.agents.map(function (a) { return { name: a.name, role: a.role, status: a.status, roi: a.roi + "%", mrr: a.mrr }; }),
-      health: { score: D.health.score, systems: D.health.systems.map(function (s) { return { name: s.name, status: s.status, value: s.v + s.unit }; }) },
-      customers: { total: D.customers.total, subs: D.customers.subscriptions, arpu: "$" + D.customers.arpu, churn: D.customers.churn + "%", nrr: D.customers.nrr + "%" },
-      forecast: { mrr_likely: D.forecast.mrr.likely, mrr_low: D.forecast.mrr.low, mrr_high: D.forecast.mrr.high, new_cust: D.forecast.newCust.likely, churn: D.forecast.churn.likely, confidence: D.forecast.confidence + "%" },
-      daily_feed: D.feed.map(function (e) { return { cat: e.cat, text: e.text, tone: e.tone }; }),
+      revenue: {
+        current_mrr: D.revenue.currentMRR, target: D.revenue.targetMRR, progress: D.revenue.progress + "%",
+        arr: D.revenue.arr, net_new: D.revenue.netNew, confidence: D.revenue.confidence + "%",
+        previous_mrr: D.revenue.prevMRR, gap_to_target: D.revenue.targetMRR - D.revenue.currentMRR,
+        changes: { mrr: "+" + D.revenue.delta.mrr + "%", arr: "+" + D.revenue.delta.arr + "%", net_new: "+" + D.revenue.delta.netNew + "%", confidence: "+" + D.revenue.delta.confidence + "%" },
+      },
+      channels: D.channels.map(function (c) { return { name: c.name, mrr: c.mrr, pct: c.pct + "%", deals: c.deals, change: (c.delta > 0 ? "+" : "") + c.delta + "% vs last period", trend: c.delta > 0 ? "growing" : "declining" }; }),
+      funnel: D.funnel.map(function (s) { return { stage: s.label, count: s.count, conv: s.conv + "%", previous_count: s.prev, change: "+" + s.delta + "% vs last period" }; }),
+      leakage: {
+        total_monthly: D.leakTotal,
+        fractures: D.leaks.map(function (l) { return { stage: l.stage, value_lost: l.valueLost, opportunities_lost: l.lost, reason: l.reason, severity: Math.round(l.sev * 100) + "%", trend: l.trend, change: (l.delta > 0 ? "+" : "") + l.delta + "%" }; }),
+      },
+      agents: D.agents.map(function (a) { return { name: a.name, role: a.role, status: a.status, roi: a.roi + "%", mrr_attributed: a.mrr, tasks_completed: a.tasks, load: a.load + "%" }; }),
+      health: {
+        score: D.health.score, previous_score: D.health.prevScore, change: "+" + D.health.delta + " points",
+        systems: D.health.systems.map(function (s) { return { name: s.name, status: s.status, value: s.v + s.unit, note: s.note, previous: s.prev + s.unit, change: (s.delta > 0 ? "+" : "") + s.delta + "%" }; }),
+      },
+      customers: {
+        total: D.customers.total, subs: D.customers.subscriptions, arpu: "$" + D.customers.arpu,
+        churn: D.customers.churn + "%", nrr: D.customers.nrr + "%",
+        changes: { total: "+" + D.customers.delta.total, subs: "+" + D.customers.delta.subs, arpu: "+" + D.customers.delta.arpu + "%", churn: D.customers.delta.churn + "% (improving)", nrr: "+" + D.customers.delta.nrr + "%" },
+        tiers: D.customers.tiers.map(function (t) { return { name: t.name, count: t.count, mrr: t.mrr, growth: "+" + t.delta }; }),
+        top_accounts: D.customers.top.map(function (a) { return { name: a.name, mrr: a.mrr, concentration: a.pct + "%" }; }),
+        concentration: D.customers.concentration + "%",
+      },
+      forecast: {
+        mrr: { likely: D.forecast.mrr.likely, low: D.forecast.mrr.low, high: D.forecast.mrr.high },
+        new_customers: { likely: D.forecast.newCust.likely, low: D.forecast.newCust.low, high: D.forecast.newCust.high },
+        churn: { likely: D.forecast.churn.likely, low: D.forecast.churn.low, high: D.forecast.churn.high },
+        meetings: { likely: D.forecast.meetings.likely, low: D.forecast.meetings.low, high: D.forecast.meetings.high },
+        confidence: D.forecast.confidence + "%", previous_confidence: D.forecast.prevConf + "%",
+        changes: { confidence: "+" + D.forecast.delta.conf + " points", mrr_growth: "+" + D.forecast.delta.mrr + "%" },
+      },
+      daily_feed: D.feed.map(function (e) { return { category: e.cat, event: e.text, detail: e.sub, tone: e.tone }; }),
       briefing: D.briefing,
     };
   }
@@ -150,16 +175,67 @@
     var leak = worstLeak();
     var activeAgents = D.agents.filter(function (a) { return a.status === "ACTIVE"; }).length;
     var guide = {
-      revenue: "You're at " + D.revenue.progress + "% of target (" + money(D.revenue.currentMRR) + " of " + money(D.revenue.targetMRR) + "). Biggest blockers are leakage at " + money(D.leakTotal) + "/mo and weak " + weak.label.toLowerCase() + " conversion at " + weak.conv + "%. Focus on fixing " + leak.stage.toLowerCase() + " with stronger personalization and tighter follow-up SLAs.",
-      attribution: "Channel mix is concentrated: LinkedIn is " + D.channels[0].pct + "% of MRR. To reduce risk, keep LinkedIn efficient while increasing inbound/referral throughput and partner-assisted deals.",
-      growth: "The funnel bottleneck is " + weak.label.toLowerCase() + " at " + weak.conv + "% conversion. Improve this stage first, then scale top-of-funnel volume once downstream conversion is stable.",
-      leakage: "Primary leak is " + leak.stage.toLowerCase() + " driven by " + leak.reason.toLowerCase() + ", costing " + money(leak.valueLost) + "/mo. Fix this first for the highest near-term revenue recovery.",
-      agents: activeAgents + " of " + D.agents.length + " agents are active. Rebalance workload from lower-ROI routines into Scout/Compass/Sentinel workflows where conversion impact is highest.",
-      health: "Health is " + D.health.score + ", but queue backlog and LinkedIn safety headroom are constraining throughput. Stabilize these two before aggressive scaling.",
-      customers: "Customer base is solid (" + D.customers.total + " accounts, NRR " + D.customers.nrr + "%), so the fastest gain is usually acquisition efficiency and leakage recovery rather than retention triage.",
-      forecast: "Forecast confidence is " + D.forecast.confidence + "% with a likely MRR of " + money(D.forecast.mrr.likely) + ". Improve conversion and leakage first to pull the outcome toward the high case.",
-      feed: "Today looks operationally strong with one risk signal around outbound safety headroom. Keep momentum, but protect deliverability while scaling.",
-      facility19: "Systemwide view: revenue momentum is real, but conversion leakage and safety constraints are capping growth. Fix those two constraints to accelerate toward target.",
+      revenue: "Let me give you the strategic picture on revenue. " +
+        "We are at " + D.revenue.progress + "% of target — " + money(D.revenue.currentMRR) + " of " + money(D.revenue.targetMRR) + ". The good news is we are up " + D.revenue.delta.mrr + "% from last month, so the trajectory is positive. " +
+        "However, there are two things holding us back. First, pipeline leakage is costing us " + money(D.leakTotal) + " per month — that is revenue we should be capturing but are losing through process gaps. " +
+        "Second, our weakest funnel stage is " + weak.label.toLowerCase() + " at only " + weak.conv + "% conversion. " +
+        "My recommendation: prioritize fixing the " + leak.stage.toLowerCase() + " leak with stronger personalization and tighter follow-up timing. That single fix has the highest revenue recovery potential. " +
+        "If we plug that leak and maintain current growth, the trajectory to thirty thousand becomes much more achievable.",
+
+      attribution: "Here is my analysis of channel risk and opportunity. " +
+        "LinkedIn outbound at " + D.channels[0].pct + "% is our largest single channel — that is strong but creates concentration risk. If LinkedIn throttles us, nearly half our revenue pipeline is affected. " +
+        "The opportunity I see: inbound and organic is growing " + D.channels[1].delta + "% — the fastest rate of any channel. Partnerships are surging at " + D.channels[4].delta + "%. These two channels are the best path to diversification. " +
+        "Paid social is the only declining channel at " + D.channels[3].delta + "%. I would evaluate whether that spend should be reallocated to accelerate partnerships or inbound content. " +
+        "My recommendation: keep LinkedIn efficient but cap further investment there. Shift growth energy to inbound, referral, and partnerships to build a more resilient revenue mix.",
+
+      growth: "Let me diagnose the growth engine for you. " +
+        "The overall funnel is improving — every stage grew this period, which is encouraging. But the key bottleneck is " + weak.label.toLowerCase() + " at just " + weak.conv + "% conversion. " +
+        "This matters because even small improvements at this stage have a multiplier effect on everything downstream. " +
+        "The good news is that stage actually improved " + weak.delta + "% from last period, so the fixes we are applying are working. " +
+        "My recommendation: keep improving this conversion rate before scaling top-of-funnel volume. Pouring more InMails into a leaky funnel wastes resources. Fix the conversion, then turn up the volume.",
+
+      leakage: "Here is my diagnosis of the leakage problem. " +
+        "The most critical fracture is " + leak.stage.toLowerCase() + ", driven by " + leak.reason.toLowerCase() + ". It is costing " + money(leak.valueLost) + " per month and — this is the concerning part — it is actually getting worse, up " + Math.abs(leak.delta) + "% this period. " +
+        "The other two leaks are both improving, which means our fixes are working there. But this one needs focused attention. " +
+        "My specific recommendations: one, improve message personalization — the templates are too generic for the prospects we are targeting. Two, implement tighter follow-up SLAs so we do not lose warm connections. Three, test shorter, more direct messaging sequences. " +
+        "If we cut this single leak in half, we recover nearly " + money(Math.round(leak.valueLost / 2)) + " per month in revenue.",
+
+      agents: "Here is my assessment of the agent cluster. " +
+        activeAgents + " of " + D.agents.length + " agents are currently active. Scout and Compass are our top two performers by both ROI and attributed revenue — they should be prioritized for resources. " +
+        "However, Compass is running at " + D.agents[1].load + "% load, which is approaching capacity. If we want to scale outreach, we may need to optimize Compass's workflows or consider distributing some of its workload. " +
+        "Oracle and Echo are on standby. Oracle handles intent scoring — activating it could improve targeting precision, which would help the conversion bottleneck we discussed. " +
+        "My recommendation: consider activating Oracle to improve lead quality scoring. Also rebalance lower-ROI agent tasks toward the Scout, Compass, and Sentinel workflows where conversion impact is highest.",
+
+      health: "Let me give you my assessment of system health. " +
+        "The overall score is " + D.health.score + ", up " + D.health.delta + " points, which is a good trend. But there are two specific constraints I want to flag. " +
+        "Queue backlog is at " + D.health.systems[3].v + " items pending, up " + D.health.systems[3].delta + "%. If this keeps growing, it will bottleneck our outreach throughput. We need to either increase processing capacity or reduce inbound queue volume. " +
+        "LinkedIn safety headroom is at " + D.health.systems[5].v + "%, down " + Math.abs(D.health.systems[5].delta) + " points. I have already throttled batch seven to compensate, but this means we are approaching LinkedIn's activity limits. " +
+        "My recommendation: stabilize these two constraints before any aggressive scaling of outbound volume. The rest of the system is solid — let us not break what is working by pushing too hard on these pressure points.",
+
+      customers: "Here is my strategic read on the customer base. " +
+        "The fundamentals are strong — " + D.customers.total + " accounts with " + D.customers.nrr + "% net revenue retention means existing customers are expanding and offsetting churn naturally. " +
+        "Churn dropped to " + D.customers.churn + "%, down " + Math.abs(D.customers.delta.churn) + " points — that is meaningful improvement. " +
+        "Given these healthy retention metrics, the fastest path to revenue growth is not retention triage — it is acquisition efficiency. " +
+        "Specifically, fixing pipeline leakage and improving funnel conversion will add more revenue than further churn reduction at this point. " +
+        "One thing to monitor: top three account concentration is " + D.customers.concentration + "%. That is moderate but worth keeping an eye on. If Northwind or Arcadia churned, it would be a notable hit.",
+
+      forecast: "Here is my strategic view of the forecast. " +
+        "We are projecting " + money(D.forecast.mrr.likely) + " MRR next month at " + D.forecast.confidence + "% confidence, up from " + D.forecast.prevConf + "%. The model is becoming more certain as conversion improvements take hold. " +
+        "The gap between low case at " + money(D.forecast.mrr.low) + " and high case at " + money(D.forecast.mrr.high) + " is about four thousand dollars. What drives the difference is mainly conversion efficiency and leakage recovery. " +
+        "My recommendation: focus on the two highest-leverage actions — fixing the connection-to-reply leak and maintaining funnel conversion improvements. These are the variables that most strongly pull the outcome toward the high case. " +
+        "If we execute well on those two things, the path to thirty thousand becomes a realistic six-month trajectory.",
+
+      feed: "Here is my read on today's operations. " +
+        "The headline numbers are strong — Scout qualified eighty-four leads, up twenty-two percent. Compass dispatched over three hundred touches. Eleven positive replies were routed, with four moving to calendar. Three meetings booked, adding eleven-eighty to pipeline, and two new subscriptions activated. " +
+        "The one risk signal: LinkedIn safety headroom at eighty-one percent. I have throttled batch seven to protect deliverability. This is the right trade-off — short-term volume for long-term sender reputation. " +
+        "My assessment: maintain current momentum but do not push outbound volume harder until safety headroom recovers above eighty-five percent.",
+
+      facility19: "Here is my system-wide strategic assessment. " +
+        "Revenue momentum is real — up " + D.revenue.delta.mrr + "% and accelerating. Customer base is healthy with " + D.customers.nrr + "% NRR. Agent cluster is performing well with Scout and Compass leading. " +
+        "But two constraints are capping our growth ceiling. First, pipeline leakage at " + money(D.leakTotal) + " per month — the connection-to-reply stage specifically is worsening and needs immediate attention. " +
+        "Second, LinkedIn safety headroom at eighty-one percent limits how fast we can scale outbound, which is our dominant channel. " +
+        "My strategic priorities: one, fix the personalization gap in connection-to-reply. Two, diversify channels toward inbound and partnerships to reduce LinkedIn dependence. Three, stabilize system health before scaling further. " +
+        "If we execute on these three things, the trajectory to thirty thousand in MRR becomes achievable within the forecast window.",
     };
     return guide[scene] || null;
   }
@@ -171,24 +247,89 @@
     var lo = (text || "").toLowerCase();
     var scene = localIntent(text);
     var map = {
-      revenue: "Current MRR is $" + D.revenue.currentMRR.toLocaleString() + ", " + D.revenue.progress + "% toward the $" + D.revenue.targetMRR.toLocaleString() + " target. Net new this period is $" + D.revenue.netNew.toLocaleString() + ".",
-      attribution: "LinkedIn outbound drives " + D.channels[0].pct + "% of revenue at $" + D.channels[0].mrr.toLocaleString() + " MRR. Inbound and referral together account for thirty-five percent.",
-      growth: "The funnel processed " + D.funnel[0].count.toLocaleString() + " touches, converging to " + D.funnel[3].count + " booked meetings at a " + D.funnel[3].conv + "% stage conversion.",
-      leakage: "Three fractures detected totaling $" + D.leakTotal.toLocaleString() + " per month. The largest bleed is connection-to-reply — weak personalization at $3,800 lost.",
-      agents: "Scout leads with " + D.agents[0].roi + "% ROI and $" + D.agents[0].mrr.toLocaleString() + " attributed MRR. " + D.agents.filter(function (a) { return a.status === "ACTIVE"; }).length + " of " + D.agents.length + " agents are active.",
-      health: "System health score is " + D.health.score + ". All core APIs nominal. Two advisories: queue backlog and LinkedIn safety headroom.",
-      customers: D.customers.total + " customers across " + D.customers.subscriptions + " subscriptions. Net revenue retention is " + D.customers.nrr + "%. Churn at " + D.customers.churn + "%.",
-      forecast: "Projecting $" + D.forecast.mrr.likely.toLocaleString() + " MRR next month. Confidence band from $" + D.forecast.mrr.low.toLocaleString() + " to $" + D.forecast.mrr.high.toLocaleString() + ". " + D.forecast.newCust.likely + " new customers expected.",
-      feed: D.briefing,
-      facility19: "Facility19 live. MRR $" + D.revenue.currentMRR.toLocaleString() + ", " + D.customers.total + " customers, " + D.agents.length + " agents, health " + D.health.score + ".",
+      revenue: "Let me walk you through the revenue picture. " +
+        "Our monthly recurring revenue is at $" + D.revenue.currentMRR.toLocaleString() + ", up " + D.revenue.delta.mrr + "% from last month's $" + D.revenue.prevMRR.toLocaleString() + " — a solid upward trend. " +
+        "We are at " + D.revenue.progress + "% of our $" + D.revenue.targetMRR.toLocaleString() + " target, which leaves a $" + (D.revenue.targetMRR - D.revenue.currentMRR).toLocaleString() + " gap to close. " +
+        "The annual run rate stands at $" + D.revenue.arr.toLocaleString() + ". " +
+        "Net new revenue this month is $" + D.revenue.netNew.toLocaleString() + ", up " + D.revenue.delta.netNew + "% — acquisition momentum is building. " +
+        "Model confidence is at " + D.revenue.confidence + "%, which is high. The trend line is clearly positive.",
+
+      attribution: "Here is the channel-by-channel breakdown. " +
+        D.channels.map(function(c) {
+          return c.name + " contributes " + c.pct + "% of revenue at $" + c.mrr.toLocaleString() + " from " + c.deals + " deals, " +
+            (c.delta > 0 ? "growing " + c.delta + "% — healthy trend" : "down " + Math.abs(c.delta) + "% — needs attention");
+        }).join(". ") + ". " +
+        "LinkedIn remains dominant at 45%. I would recommend diversifying toward inbound and partnerships which show the strongest growth rates.",
+
+      growth: "Let me take you through the funnel stage by stage. " +
+        D.funnel.map(function(s) {
+          return s.label + " came in at " + s.count.toLocaleString() +
+            (s.conv < 100 ? " with a " + s.conv + "% conversion rate" : " at the top of funnel") +
+            ", up " + s.delta + "% from the previous " + s.prev.toLocaleString();
+        }).join(". ") + ". " +
+        "The end-to-end book rate from InMail to meeting is 0.69%. Every stage improved this period, which is exactly what we want to see.",
+
+      leakage: "I have identified three pipeline fractures costing us $" + D.leakTotal.toLocaleString() + " per month total. " +
+        D.leaks.map(function(l) {
+          return "The " + l.stage.toLowerCase() + " stage is losing " + l.lost.toLocaleString() + " opportunities due to " + l.reason.toLowerCase() +
+            ", costing $" + l.valueLost.toLocaleString() + " per month. This leak is " + l.trend +
+            (l.delta < 0 ? ", down " + Math.abs(l.delta) + "%" : ", up " + l.delta + "% — which is concerning");
+        }).join(". ") + ". " +
+        "My priority recommendation: focus on the connection-to-reply stage where weak personalization is the costliest and worsening problem.",
+
+      agents: "Let me rank the agent cluster for you. " +
+        D.agents.slice(0, 6).map(function(a) {
+          return a.name + " handles " + a.role.toLowerCase() + " with a " + a.roi + "% ROI and $" + a.mrr.toLocaleString() + " in attributed revenue, running at " + a.load + "% load with " + a.tasks.toLocaleString() + " tasks completed";
+        }).join(". ") + ". " +
+        "Oracle and Echo are on standby. Six of eight agents are active and the cluster is performing well overall. Scout leads as our top performer.",
+
+      health: "System health is at " + D.health.score + ", up " + D.health.delta + " points from " + D.health.prevScore + ". Let me go through each subsystem. " +
+        D.health.systems.map(function(s) {
+          var trend = s.delta > 0 ? "up " + s.delta + "%" : "improved " + Math.abs(s.delta) + "%";
+          if (s.name === "QUEUE BACKLOG" && s.delta > 0) trend = "up " + s.delta + "% — building up";
+          if (s.name === "LI SAFETY" && s.delta < 0) trend = "down " + Math.abs(s.delta) + " points — tightening";
+          return s.name + " is at " + s.v + s.unit + ", " + trend + ". Status: " + (s.status === "ok" ? "nominal" : "advisory");
+        }).join(". ") + ". " +
+        "Overall the system is healthy but queue backlog and LinkedIn safety headroom need monitoring as we scale.",
+
+      customers: "Here is the complete customer picture. " +
+        "We have " + D.customers.total + " customers, up " + D.customers.delta.total + " from last period. They hold " + D.customers.subscriptions + " active subscriptions, up " + D.customers.delta.subs + ". " +
+        "Average revenue per user is $" + D.customers.arpu + ", up " + D.customers.delta.arpu + "%. " +
+        "Net revenue retention is at " + D.customers.nrr + "% — excellent, meaning existing customers are expanding faster than they churn. " +
+        "Churn rate is " + D.customers.churn + "%, improved by " + Math.abs(D.customers.delta.churn) + " points — headed in the right direction. " +
+        "By tier: " + D.customers.tiers.map(function(t) { return t.name + " has " + t.count + " accounts at $" + t.mrr.toLocaleString() + " MRR, plus " + t.delta + " new"; }).join(". ") + ". " +
+        "Top three account concentration is " + D.customers.concentration + "% — moderate and manageable.",
+
+      forecast: "Let me lay out the forecast. " +
+        "Base projection is $" + D.forecast.mrr.likely.toLocaleString() + " MRR next month — a " + D.forecast.delta.mrr + "% increase. " +
+        "The scenario range is: low at $" + D.forecast.mrr.low.toLocaleString() + ", base at $" + D.forecast.mrr.likely.toLocaleString() + ", high at $" + D.forecast.mrr.high.toLocaleString() + ". " +
+        "We expect " + D.forecast.newCust.likely + " new customers in the base case, with a range from " + D.forecast.newCust.low + " to " + D.forecast.newCust.high + ". " +
+        "Projected churn is " + D.forecast.churn.likely + " customers, range " + D.forecast.churn.low + " to " + D.forecast.churn.high + ". " +
+        "Model confidence is " + D.forecast.confidence + "%, up " + D.forecast.delta.conf + " points from " + D.forecast.prevConf + "%. " +
+        "The trajectory toward our thirty-thousand target looks achievable if we maintain this growth rate.",
+
+      feed: "Here is your daily briefing, event by event. " +
+        D.feed.map(function(e) {
+          return e.cat + ": " + e.text + " — " + e.sub;
+        }).join(". ") + ". " +
+        "Overall assessment: " + D.briefing,
+
+      facility19: "This is the Facility19 system-wide view. " +
+        "Revenue: $" + D.revenue.currentMRR.toLocaleString() + " MRR, up " + D.revenue.delta.mrr + "%, at " + D.revenue.progress + "% of target. " +
+        "Customers: " + D.customers.total + " accounts, up " + D.customers.delta.total + ". Net revenue retention at " + D.customers.nrr + "%. " +
+        "Agents: " + D.agents.length + " deployed, " + D.agents.filter(function(a) { return a.status === "ACTIVE"; }).length + " active. Scout and Compass leading value creation. " +
+        "Health: " + D.health.score + ", up " + D.health.delta + " points. Two advisories active. " +
+        "Forecast: $" + D.forecast.mrr.likely.toLocaleString() + " projected next month at " + D.forecast.confidence + "% confidence. " +
+        "Leakage: $" + D.leakTotal.toLocaleString() + " per month across three fractures — the connection-to-reply stage is the priority fix. " +
+        "The system is performing well and accelerating toward target.",
     };
     var asksWhyOrHow = /\b(why|how come|root cause|cause|reason|diagnose|analysis)\b/.test(lo);
     var asksForActions = /\b(how|improve|increase|fix|plan|strategy|next step|recommend|advice|what should)\b/.test(lo);
     var asksIdentity = /\b(who are you|what are you|introduce yourself)\b/.test(lo);
-    if (asksIdentity) return "I'm J.A.R.V.I.S., your professional AI assistant for Facility19. I can answer general questions, explain decisions, and provide data-backed business guidance. If you want visuals, ask me to show a screen.";
-    if (/\b(hi|hello|hey)\b/.test(lo)) return "Hello. I can help with general questions and Facility19 insights. What would you like to dive into?";
-    if (/\b(thank|thanks)\b/.test(lo)) return "You're welcome. If you want, I can also pull up a specific screen when you ask.";
-    if (/\b(help|what can you do)\b/.test(lo)) return "I can answer general questions, explain concepts, help with writing and strategy, and report Facility19 metrics. Ask naturally, and I will only switch screens when you explicitly request visuals.";
+    if (asksIdentity) return "I am J.A.R.V.I.S., your personal AI executive assistant for Facility19. I know every metric in the system — revenue, customers, agents, forecasts, the full picture. I can walk you through any data point in detail, explain what is changing and why it matters, and give you strategic recommendations. I can also help with general questions, writing, and planning. Think of me as your chief of staff who never sleeps. What would you like to dive into?";
+    if (/\b(hi|hello|hey)\b/.test(lo)) return "Hello. Good to have you here. I have the full Facility19 dashboard ready — revenue, customers, agents, forecast, everything. I can walk you through any area in detail, or help with something else entirely. What is on your mind?";
+    if (/\b(thank|thanks)\b/.test(lo)) return "You are very welcome. I am here whenever you need me. If you want to explore another area of the business, just ask — I can break down any metric in detail for you.";
+    if (/\b(help|what can you do)\b/.test(lo)) return "I am your personal executive assistant for Facility19. Here is what I can do for you: I can walk through any business metric in detail — revenue trends, customer growth, pipeline health, agent performance, forecasts. For each metric, I will tell you the current value, how it has changed, and what it means. I can also help with strategy, general questions, writing, and planning. Just ask naturally, and if you want me to pull up a visual, say something like 'show me revenue' or 'open the forecast'.";
     if (scene && (asksWhyOrHow || asksForActions)) {
       var coached = sceneCoachingAnswer(scene);
       if (coached) return coached;
@@ -198,9 +339,9 @@
       return sceneCoachingAnswer("revenue");
     }
     if (/\?$/.test((text || "").trim()) || /\b(why|how|what|when|where|who)\b/.test(lo)) {
-      return "Good question. I can help with general reasoning, writing, planning, and Facility19 operations. Share a bit more context and I will give a precise, professional answer.";
+      return "That is a great question. I can help with general reasoning, writing, planning, and detailed Facility19 operations analysis. Could you give me a bit more context so I can give you a thorough, specific answer? I do not want to guess when I can be precise.";
     }
-    return "I can answer general questions as well as Facility19 metrics. Ask anything, and if you want visuals, say things like 'show' or 'open' for the screen you want.";
+    return "I am here and ready to help. I can walk you through any area of the Facility19 business in detail — revenue, customers, pipeline, agents, forecasts, system health. Or if you have a general question, I am happy to help with that too. Just ask naturally.";
   }
 
   /* ===========================================================================
@@ -208,15 +349,21 @@
      =========================================================================== */
   function systemPrompt() {
     var scene = J.current ? J.current.key : "home";
-    return "You are J.A.R.V.I.S., the AI assistant for Facility19. You can answer both Facility19 business questions and general questions like a normal LLM assistant. Speak with calm confidence and be genuinely helpful.\n\n" +
+    return "You are J.A.R.V.I.S., a personal AI executive assistant for Facility19. You are not a vague chatbot — you are a trusted advisor who knows the business inside and out. Think of yourself like a chief of staff who has memorized every metric and can explain any of them in plain, confident language.\n\n" +
       "ACTIVE SCENE: " + scene + "\n\n" +
       "KNOWLEDGE BASE:\n" + JSON.stringify(buildKB()) + "\n\n" +
-      "RULES:\n" +
-      "- Answer the user's actual question first; do not force metrics unless the user asks for business/dashboard data.\n" +
-      "- For Facility19 data questions, use exact metrics from the knowledge base.\n" +
-      "- For questions like 'who are you' or strategic 'why are we behind', respond with identity/analysis, not just metric recitation.\n" +
-      "- For general questions, answer naturally like a high-quality general assistant.\n" +
-      "- Keep answers concise (usually 2-5 sentences).\n" +
+      "HOW TO RESPOND:\n" +
+      "- When the user asks about a business area (revenue, customers, etc.), walk through each relevant metric ONE BY ONE. Do not lump everything into one sentence.\n" +
+      "- For each metric, state the current value, mention whether it increased or decreased (use the 'changes' data), and briefly explain what that means or why it matters.\n" +
+      "- Use natural, spoken language — this will be read aloud. Say 'thirteen thousand two hundred dollars' not '$13,200'. Avoid jargon unless the user uses it first.\n" +
+      "- Be specific with numbers. Do not say 'revenue is good' — say 'revenue is at thirteen thousand two hundred, up nearly twelve percent from last month, which puts us at forty-four percent of target.'\n" +
+      "- When there is an increase, explicitly say it is increasing and by how much. When there is a decrease or concern, flag it clearly and suggest what to watch or do.\n" +
+      "- Speak like a personal assistant giving a private briefing: direct, warm, professional. Use phrases like 'Let me walk you through this', 'Here is what I see', 'The key thing to note here is', 'I would recommend'.\n" +
+      "- After covering the metrics, offer a brief assessment or recommendation when relevant.\n" +
+      "- For general questions not about Facility19 data, answer naturally and helpfully like a high-quality assistant.\n" +
+      "- For identity questions, explain you are their personal AI executive assistant for Facility19, capable of detailed metric analysis, strategic guidance, and general assistance.\n" +
+      "- Aim for thorough but spoken-length answers (5-12 sentences for data questions, 2-5 for general questions). Do not be terse.\n\n" +
+      "NAVIGATION RULES:\n" +
       "- End your response with a JSON tag on its own line: {\"scene\":\"name\"} where name is one of: revenue, attribution, growth, leakage, agents, health, customers, forecast, feed, facility19 — or null.\n" +
       "- Set scene to a value only when the user explicitly asks to show, display, open, switch, or navigate visuals/screens for that domain. Otherwise set scene to null.";
   }
@@ -233,7 +380,7 @@
     return fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: { "Authorization": "Bearer " + CFG.OPENROUTER_KEY, "Content-Type": "application/json", "HTTP-Referer": location.href },
-      body: JSON.stringify({ model: CFG.LLM_MODEL, messages: msgs, temperature: 0.7, max_tokens: 250 }),
+      body: JSON.stringify({ model: CFG.LLM_MODEL, messages: msgs, temperature: 0.7, max_tokens: 600 }),
     })
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(function (d) {
@@ -468,7 +615,9 @@
     if (startupGreetingDone) return;
     startupGreetingDone = true;
     stopWake();
-    var msg = "Welcome to Facility19. HR operations is online for startup handoff. JARVIS is now active and ready to assist with any question.";
+    var msg = "Good to see you. All systems are online and I have the full Facility19 dashboard ready. " +
+      "Revenue is at $" + D.revenue.currentMRR.toLocaleString() + ", up " + D.revenue.delta.mrr + "% from last month. " +
+      "Just ask me about any metric and I will walk you through it in detail, or say 'show me' followed by what you want to see. I am here whenever you need me.";
     if (A) { A.resume(); A.play("online"); }
     setTimeout(function () { speak(msg, { noFollowUp: true }); }, 450);
   }
