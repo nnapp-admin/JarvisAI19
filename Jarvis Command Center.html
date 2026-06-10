@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Facility19 · Jarvis Command Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+<style>
+/* ===================================================================
+   THEME TOKENS — JS shifts --hue per scene for the color narrative
+   =================================================================== */
+:root{
+  --hue: 205;                       /* live accent hue */
+  --accent:    hsl(var(--hue) 100% 66%);
+  --accent-dim:hsl(var(--hue) 80% 50%);
+  --accent-deep:hsl(var(--hue) 90% 22%);
+  --ink:    hsl(var(--hue) 100% 84%);
+  --ink-soft:hsla(var(--hue), 90%, 78%, .62);
+  --ink-faint:hsla(var(--hue), 70%, 70%, .38);
+  --line:   hsla(var(--hue), 80%, 55%, .26);
+  --line-soft:hsla(var(--hue), 80%, 55%, .14);
+  --glass:  hsla(var(--hue), 70%, 10%, .42);
+  --glass-2:hsla(var(--hue), 80%, 14%, .30);
+  --bg0: #00040c;
+  --good: #46e6a0; --warn: #ffc24d; --bad: #ff5a52; --gold:#ffce5c;
+  transition: --hue .9s ease;
+}
+*{ box-sizing:border-box; margin:0; padding:0; }
+html,body{ height:100%; }
+body{
+  background:#00040c;
+  color:var(--ink);
+  font-family:'Share Tech Mono', monospace;
+  overflow:hidden;
+  user-select:none;
+  -webkit-font-smoothing:antialiased;
+}
+canvas{ display:block; }
+
+/* ===================================================================
+   STAGE (3D layers)
+   =================================================================== */
+#stage{ position:fixed; inset:0; z-index:1; }
+#stage canvas{ position:absolute; inset:0; }
+.css2d-layer{ pointer-events:none; }
+
+/* ---- floating 3D labels ---- */
+.lbl{
+  font-family:'Share Tech Mono', monospace;
+  color:var(--ink); white-space:nowrap; pointer-events:none;
+  text-shadow:0 0 12px hsla(var(--hue),100%,60%,.7);
+  transform:translate(-50%,-50%);
+}
+.lbl .lbl-k{ font-size:9px; letter-spacing:2px; color:var(--ink-soft); display:block; }
+.lbl .lbl-v{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:22px; letter-spacing:1px; color:#fff;
+             text-shadow:0 0 18px hsla(var(--hue),100%,62%,.9); display:block; line-height:1; }
+.lbl.tag{ border:1px solid var(--line); background:hsla(var(--hue),60%,8%,.5);
+          padding:3px 8px; font-size:9px; letter-spacing:2px; color:var(--ink); backdrop-filter:blur(2px); }
+.lbl.gold .lbl-v{ color:var(--gold); text-shadow:0 0 18px rgba(255,200,80,.9); }
+.lbl.danger .lbl-v{ color:#ff8a82; text-shadow:0 0 18px rgba(255,80,70,.9); }
+
+/* ===================================================================
+   FX OVERLAYS
+   =================================================================== */
+#scanlines,#vignette,#grain{ position:fixed; inset:0; pointer-events:none; z-index:50; }
+#scanlines{ background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,18,40,.05) 2px,rgba(0,18,40,.05) 4px); opacity:.7; }
+#vignette{ background:radial-gradient(120% 120% at 50% 42%, transparent 52%, rgba(0,3,9,.78) 100%); }
+#grain{ opacity:.05; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+
+/* ===================================================================
+   TOP BAR
+   =================================================================== */
+#topbar{
+  position:fixed; top:0; left:0; right:0; height:46px; z-index:30;
+  display:flex; align-items:center; gap:14px; padding:0 18px;
+  background:linear-gradient(180deg, hsla(var(--hue),80%,8%,.92), hsla(var(--hue),80%,6%,.55) 70%, transparent);
+  border-bottom:1px solid var(--line);
+}
+#topbar .brandmark{ width:22px; height:22px; position:relative; flex:none; }
+#topbar .brandmark::before,#topbar .brandmark::after{ content:''; position:absolute; inset:0; border:1.5px solid var(--accent); border-radius:50%; }
+#topbar .brandmark::after{ inset:6px; border-color:var(--ink); opacity:.7; }
+#topbar .brandmark i{ position:absolute; inset:9px; background:#fff; border-radius:50%; box-shadow:0 0 10px var(--accent); }
+.title-main{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:15px; letter-spacing:5px; color:#eaf6ff; text-shadow:0 0 14px hsla(var(--hue),100%,60%,.5); }
+.title-sub{ font-size:8.5px; letter-spacing:2.5px; color:var(--ink-faint); margin-top:-2px; }
+.spacer{ flex:1; }
+.badge{ padding:3px 9px; border:1px solid var(--line); font-size:8.5px; letter-spacing:2px; color:var(--ink-soft); background:var(--glass-2); white-space:nowrap; }
+.badge.on{ border-color:hsla(150,80%,55%,.6); color:#7df0b6; background:hsla(150,70%,20%,.25); }
+.badge.warn{ border-color:hsla(42,90%,60%,.55); color:#ffd27a; background:hsla(42,70%,22%,.22); }
+.badge.sound{ cursor:pointer; transition:all .2s; }
+.badge.sound:hover{ border-color:var(--accent); color:var(--ink); }
+.badge.sound.off{ opacity:.5; }
+.badge.sound #sound-ico{ color:var(--accent); }
+.badge.sound b{ color:var(--ink); font-weight:400; }
+/* audio-arm prompt overlay on boot */
+#audio-arm{ position:fixed; inset:0; z-index:95; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; background:rgba(0,4,12,.6); backdrop-filter:blur(3px); cursor:pointer; transition:opacity .6s; }
+#audio-arm .aa-ring{ width:54px; height:54px; border:1.5px solid var(--accent); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:20px; color:var(--accent); box-shadow:0 0 24px hsla(var(--hue),100%,55%,.5); animation:micpulse 2s ease-out infinite; }
+#audio-arm .aa-t{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:14px; letter-spacing:5px; color:#eaf6ff; }
+#audio-arm .aa-s{ font-size:9px; letter-spacing:3px; color:var(--ink-faint); }
+.clock{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:16px; letter-spacing:2px; color:#eaf6ff; }
+.clock small{ font-family:'Share Tech Mono'; font-size:8px; color:var(--ink-faint); letter-spacing:1.5px; display:block; text-align:right; margin-top:-3px; }
+.sysmini{ font-size:8.5px; letter-spacing:1px; color:var(--ink-faint); line-height:1.5; text-align:right; }
+.sysmini b{ color:var(--ink-soft); font-weight:400; }
+
+/* ===================================================================
+   SIDE PANELS (glass, floating over 3D)
+   =================================================================== */
+.panel{
+  position:fixed; top:60px; bottom:150px; width:236px; z-index:25;
+  display:flex; flex-direction:column; gap:14px; padding:14px 14px 8px;
+  background:linear-gradient(180deg,var(--glass),hsla(var(--hue),60%,6%,.18));
+  border:1px solid var(--line); backdrop-filter:blur(6px);
+  overflow:hidden;
+}
+#left-panel{ left:14px; }
+#right-panel{ right:14px; }
+.panel .corner{ position:absolute; width:12px; height:12px; pointer-events:none; }
+.panel .corner.tl{ top:5px; left:5px; border-top:1px solid var(--accent); border-left:1px solid var(--accent); }
+.panel .corner.tr{ top:5px; right:5px; border-top:1px solid var(--accent); border-right:1px solid var(--accent); }
+.panel .corner.bl{ bottom:5px; left:5px; border-bottom:1px solid var(--accent); border-left:1px solid var(--accent); }
+.panel .corner.br{ bottom:5px; right:5px; border-bottom:1px solid var(--accent); border-right:1px solid var(--accent); }
+
+.sec{ display:flex; flex-direction:column; gap:6px; }
+.sec.grow{ flex:1; min-height:0; }
+.sec-h{ font-size:8.5px; letter-spacing:3px; color:var(--ink-soft); padding-bottom:5px; border-bottom:1px solid var(--line-soft); display:flex; justify-content:space-between; }
+.sec-h .dot{ width:5px; height:5px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); align-self:center; animation:blink 2.4s infinite; }
+@keyframes blink{ 0%,100%{opacity:1} 50%{opacity:.35} }
+
+/* bars */
+.bar-row{ margin-bottom:6px; }
+.bar-row .bl{ display:flex; justify-content:space-between; font-size:8px; color:var(--ink-faint); margin-bottom:2px; letter-spacing:1px; }
+.bar-track{ height:3px; background:hsla(var(--hue),60%,30%,.25); overflow:hidden; }
+.bar-fill{ height:100%; background:linear-gradient(90deg,var(--accent-dim),var(--accent)); box-shadow:0 0 8px var(--accent); transition:width .8s cubic-bezier(.2,.8,.2,1); }
+
+/* telemetry */
+#telemetry{ flex:1; overflow:hidden; font-size:8.5px; line-height:1.65; display:flex; flex-direction:column; justify-content:flex-end; }
+#telemetry .t{ color:var(--ink-soft); padding:1px 0; border-bottom:1px solid hsla(var(--hue),60%,40%,.08); opacity:.55; }
+#telemetry .t .a{ color:var(--accent); }
+#telemetry .t:last-child{ opacity:1; color:#bfe9ff; }
+
+/* agent rows */
+.arow{ display:flex; align-items:center; justify-content:space-between; padding:3px 5px; border:1px solid transparent; font-size:9px; letter-spacing:1px; }
+.arow .l{ display:flex; align-items:center; gap:6px; }
+.arow .d{ width:5px; height:5px; border-radius:50%; }
+.arow .d.on{ background:var(--good); box-shadow:0 0 6px var(--good); }
+.arow .d.sb{ background:var(--warn); box-shadow:0 0 6px var(--warn); }
+.arow .nm{ color:#bfe9ff; }
+.arow .st{ font-size:7.5px; color:var(--ink-faint); }
+
+/* right-panel contextual stats */
+#ctx-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:3px; color:#eaf6ff; }
+#ctx-body{ display:flex; flex-direction:column; gap:14px; overflow-y:auto; flex:1; min-height:0; }
+#ctx-body::-webkit-scrollbar{ width:0; }
+.stat{ }
+.stat .k{ font-size:8px; letter-spacing:2px; color:var(--ink-faint); }
+.stat .v{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:30px; line-height:1; color:#fff; letter-spacing:1px; text-shadow:0 0 20px hsla(var(--hue),100%,60%,.6); }
+.stat .v small{ font-family:'Share Tech Mono'; font-size:11px; color:var(--ink-soft); margin-left:4px; letter-spacing:1px; }
+.stat .v.good{ color:var(--good); } .stat .v.warn{ color:var(--warn); } .stat .v.bad{ color:#ff8a82; }
+.minirow{ display:flex; justify-content:space-between; font-size:9px; letter-spacing:1px; padding:3px 0; border-bottom:1px solid var(--line-soft); }
+.minirow span:first-child{ color:var(--ink-faint); }
+.minirow span:last-child{ color:#bfe9ff; }
+.chip{ display:inline-block; font-size:8px; letter-spacing:1.5px; padding:2px 7px; border:1px solid var(--line); color:var(--ink-soft); margin:0 3px 3px 0; }
+
+/* ===================================================================
+   SCENE TITLE (big, top-center)
+   =================================================================== */
+#scene-title{ position:fixed; top:58px; left:50%; transform:translateX(-50%); z-index:24; text-align:center; pointer-events:none; opacity:0; }
+#scene-title .st-q{ font-size:9px; letter-spacing:4px; color:var(--ink-soft); margin-bottom:3px; }
+#scene-title .st-n{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:30px; letter-spacing:8px; color:#eaf6ff; text-shadow:0 0 24px hsla(var(--hue),100%,60%,.6); }
+
+/* ===================================================================
+   JARVIS CAPTION BAR
+   =================================================================== */
+#caption{
+  position:fixed; left:50%; transform:translateX(-50%); bottom:114px; z-index:28;
+  width:min(820px,62vw); padding:11px 20px; text-align:center;
+  background:linear-gradient(180deg, hsla(var(--hue),70%,9%,.7), hsla(var(--hue),70%,6%,.4));
+  border:1px solid var(--line); backdrop-filter:blur(6px);
+  opacity:0; transition:opacity .4s;
+}
+#caption::before{ content:'J.A.R.V.I.S'; position:absolute; top:-8px; left:16px; font-size:8px; letter-spacing:3px; padding:1px 7px; background:var(--bg0); color:var(--accent); border:1px solid var(--line); }
+#caption .ctxt{ font-size:13px; line-height:1.55; color:#dff1ff; letter-spacing:.3px; min-height:20px; }
+#caption .cursor{ display:inline-block; width:8px; height:14px; background:var(--accent); margin-left:2px; vertical-align:-2px; animation:blink 1s steps(1) infinite; box-shadow:0 0 8px var(--accent); }
+
+/* ===================================================================
+   COMMAND DOCK
+   =================================================================== */
+#dock{
+  position:fixed; left:50%; transform:translateX(-50%); bottom:14px; z-index:30;
+  display:flex; gap:7px; align-items:stretch; padding:9px 12px;
+  background:linear-gradient(180deg, hsla(var(--hue),70%,8%,.6), hsla(var(--hue),70%,5%,.4));
+  border:1px solid var(--line); backdrop-filter:blur(8px); max-width:94vw; flex-wrap:wrap; justify-content:center;
+}
+#dock .mic{ width:60px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; border-right:1px solid var(--line-soft); padding-right:10px; }
+#dock .mic .ring{ width:30px; height:30px; border:1.5px solid var(--accent); border-radius:50%; position:relative; display:flex; align-items:center; justify-content:center; }
+#dock .mic .ring i{ width:9px; height:13px; border-radius:5px; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+#dock .mic .ring::after{ content:''; position:absolute; inset:-5px; border:1px solid var(--accent); border-radius:50%; opacity:0; animation:micpulse 2.5s ease-out infinite; }
+@keyframes micpulse{ 0%{ transform:scale(.8); opacity:.6 } 100%{ transform:scale(1.5); opacity:0 } }
+#dock .mic span{ font-size:7px; letter-spacing:2px; color:var(--ink-faint); }
+
+.cmd{
+  cursor:pointer; padding:7px 10px; min-width:78px; text-align:left;
+  border:1px solid var(--line); background:hsla(var(--hue),60%,12%,.3);
+  transition:all .22s; position:relative; overflow:hidden;
+}
+.cmd:hover{ background:hsla(var(--hue),70%,22%,.5); border-color:var(--accent); transform:translateY(-2px); }
+.cmd.active{ background:hsla(var(--hue),80%,28%,.6); border-color:var(--accent); box-shadow:0 0 16px hsla(var(--hue),100%,55%,.4); }
+.cmd .ci{ font-size:7px; letter-spacing:1px; color:var(--ink-faint); }
+.cmd .cn{ font-family:'Rajdhani',sans-serif; font-weight:600; font-size:11px; letter-spacing:1.5px; color:#cfeaff; line-height:1.1; margin-top:2px; }
+
+/* ===================================================================
+   BOOT SEQUENCE
+   =================================================================== */
+#boot{ position:fixed; inset:0; z-index:90; background:#00040c; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; transition:opacity 1s; }
+#boot .bcore{ width:70px; height:70px; position:relative; }
+#boot .bcore .r{ position:absolute; inset:0; border:1px solid var(--accent); border-radius:50%; animation:spin 3s linear infinite; }
+#boot .bcore .r:nth-child(2){ inset:10px; border-color:var(--ink); border-top-color:transparent; animation-duration:2s; animation-direction:reverse; }
+#boot .bcore .r:nth-child(3){ inset:22px; border-color:transparent; border-top-color:#fff; animation-duration:1.2s; }
+#boot .bcore i{ position:absolute; inset:30px; background:#fff; border-radius:50%; box-shadow:0 0 24px var(--accent); animation:blink 1.4s infinite; }
+@keyframes spin{ to{ transform:rotate(360deg) } }
+#boot .blog{ width:min(440px,80vw); height:120px; font-size:10px; line-height:1.7; color:var(--ink-soft); letter-spacing:1px; }
+#boot .blog .ok{ color:var(--good); }
+#boot .btitle{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:22px; letter-spacing:10px; color:#eaf6ff; }
+
+/* hint */
+#hint{ position:fixed; bottom:120px; left:50%; transform:translateX(-50%); z-index:23; font-size:9px; letter-spacing:3px; color:var(--ink-faint); text-align:center; transition:opacity .5s; }
+
+@media (max-width:1100px){
+  .panel{ width:200px; }
+  .cmd{ min-width:64px; padding:6px 7px; }
+  .cmd .cn{ font-size:9.5px; }
+}
+
+/* ===================================================================
+   VOICE INTELLIGENCE LAYER
+   =================================================================== */
+#voice-orb-overlay{
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:160px; height:160px; border-radius:50%; cursor:pointer; z-index:18;
+  transition:box-shadow .3s, background .3s;
+}
+#voice-orb-overlay:hover{
+  box-shadow:0 0 50px hsla(var(--hue),100%,60%,.2);
+  background:hsla(var(--hue),100%,60%,.04);
+}
+#voice-transcript{
+  position:fixed; left:50%; transform:translateX(-50%); bottom:156px; z-index:29;
+  padding:6px 18px; font-size:12px; letter-spacing:.5px; color:#dff1ff;
+  background:linear-gradient(180deg,hsla(var(--hue),70%,10%,.72),hsla(var(--hue),70%,7%,.52));
+  border:1px solid var(--line); backdrop-filter:blur(5px);
+  opacity:0; transition:opacity .3s; max-width:min(640px,55vw); text-align:center;
+}
+#voice-transcript::before{
+  content:'YOU ›'; font-size:8px; letter-spacing:3px; color:var(--accent); margin-right:10px;
+}
+
+/* mic state transitions via body class */
+#dock .mic .ring{ transition:border-color .4s, box-shadow .4s, transform .3s; }
+#dock .mic span{ transition:color .3s; }
+
+body.voice-wake #dock .mic .ring{
+  border-color:#4de8ff; box-shadow:0 0 24px hsla(var(--hue),100%,70%,.65); transform:scale(1.18);
+}
+body.voice-wake #dock .mic span{ color:#4de8ff; }
+
+body.voice-listening #dock .mic .ring{
+  border-color:var(--good); box-shadow:0 0 26px hsla(150,90%,60%,.55);
+}
+body.voice-listening #dock .mic .ring::after{ animation:micpulse .8s ease-out infinite; }
+body.voice-listening #dock .mic .ring i{ background:var(--good); box-shadow:0 0 12px var(--good); }
+body.voice-listening #dock .mic span{ color:var(--good); }
+
+body.voice-thinking #dock .mic .ring{
+  animation:spin .7s linear infinite; border-color:var(--warn); box-shadow:0 0 22px hsla(42,90%,60%,.55);
+}
+body.voice-thinking #dock .mic .ring i{ background:var(--warn); box-shadow:0 0 10px var(--warn); }
+body.voice-thinking #dock .mic span{ color:var(--warn); }
+
+body.voice-speaking #dock .mic .ring{
+  border-color:#c79bff; box-shadow:0 0 30px hsla(270,90%,70%,.55);
+}
+body.voice-speaking #dock .mic .ring i{ background:#c79bff; box-shadow:0 0 12px #c79bff; }
+body.voice-speaking #dock .mic span{ color:#c79bff; }
+
+body.voice-wake #vignette{ opacity:.5; transition:opacity .5s; }
+body.voice-listening #scanlines{ opacity:.85; }
+body.voice-thinking #grain{ opacity:.09; transition:opacity .3s; }
+</style>
+</head>
+<body>
+  <!-- 3D STAGE -->
+  <div id="stage"></div>
+
+  <!-- FX -->
+  <div id="scanlines"></div>
+  <div id="vignette"></div>
+  <div id="grain"></div>
+
+  <!-- TOP BAR -->
+  <header id="topbar">
+    <div class="brandmark"><i></i></div>
+    <div>
+      <div class="title-main">J.A.R.V.I.S</div>
+      <div class="title-sub">FACILITY19 · EXECUTIVE COMMAND CENTER</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="badge on" id="b-online">● ONLINE</div>
+    <div class="badge" id="b-sync">NEXUS SYNC</div>
+    <div class="badge" id="b-enc">ENCRYPTED</div>
+    <div class="badge sound" id="b-sound" title="Toggle audio"><span id="sound-ico">♪</span> SOUND <b id="sound-state">ON</b></div>
+    <div class="clock"><span id="clock">--:--:--</span><small id="date">—</small></div>
+    <div class="sysmini">CPU <b id="cpu">42%</b> · MEM <b id="mem">3.2GB</b><br/>LAT <b id="lat">34ms</b> · AGENTS <b id="acount">6/8</b></div>
+  </header>
+
+  <!-- LEFT PANEL -->
+  <aside class="panel" id="left-panel">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div class="sec">
+      <div class="sec-h"><span>SYSTEM VITALS</span><span class="dot"></span></div>
+      <div id="vitals"></div>
+    </div>
+    <div class="sec grow">
+      <div class="sec-h"><span>TELEMETRY</span><span style="color:var(--ink-faint)">LIVE</span></div>
+      <div id="telemetry"></div>
+    </div>
+    <div class="sec">
+      <div class="sec-h"><span>AGENT CLUSTER</span></div>
+      <div id="agentlist"></div>
+    </div>
+  </aside>
+
+  <!-- RIGHT PANEL (contextual) -->
+  <aside class="panel" id="right-panel">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div class="sec-h"><span id="ctx-title">PRIMARY OBJECTIVE</span><span class="dot"></span></div>
+    <div id="ctx-body"></div>
+  </aside>
+
+  <!-- SCENE TITLE -->
+  <div id="scene-title"><div class="st-q"></div><div class="st-n"></div></div>
+
+  <!-- CAPTION -->
+  <div id="caption"><div class="ctxt"></div></div>
+
+  <div id="hint">SAY "JARVIS" OR SELECT A COMMAND · VOICE ENABLED · CTRL+J</div>
+
+  <!-- VOICE INTELLIGENCE LAYER -->
+  <div id="voice-orb-overlay" title="Click to activate Jarvis"></div>
+  <div id="voice-transcript"><span id="voice-transcript-text"></span></div>
+
+  <!-- COMMAND DOCK -->
+  <div id="dock">
+    <div class="mic"><div class="ring"><i></i></div><span id="mic-state">STANDBY</span></div>
+    <div id="cmds" style="display:flex; gap:7px; flex-wrap:wrap; justify-content:center;"></div>
+  </div>
+
+  <!-- AUDIO ARM (gesture gate for Web Audio) -->
+  <div id="audio-arm">
+    <div class="aa-ring">♪</div>
+    <div class="aa-t">TAP TO ENGAGE J.A.R.V.I.S</div>
+    <div class="aa-s">ENABLES VOICE + SPATIAL AUDIO · CLICK ANYWHERE</div>
+  </div>
+
+  <!-- BOOT -->
+  <div id="boot">
+    <div class="bcore"><div class="r"></div><div class="r"></div><div class="r"></div><i></i></div>
+    <div class="btitle">J.A.R.V.I.S</div>
+    <div class="blog" id="blog"></div>
+  </div>
+
+  <!-- LIBS -->
+  <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+
+  <!-- APP -->
+  <script src="js/data.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/scenes-a.js"></script>
+  <script src="js/scenes-b.js"></script>
+  <script src="js/jarvis-ui.js"></script>
+  <script src="js/jarvis-voice.js"></script>
+</body>
+</html>
