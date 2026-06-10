@@ -228,6 +228,11 @@ canvas{ display:block; }
 /* hint */
 #hint{ position:fixed; bottom:120px; left:50%; transform:translateX(-50%); z-index:23; font-size:9px; letter-spacing:3px; color:var(--ink-faint); text-align:center; transition:opacity .5s; }
 
+/* voice-only: hide command buttons, keep only mic */
+#cmds{ display:none !important; }
+#dock{ padding:9px 18px; }
+#dock .mic{ border-right:none; padding-right:0; width:auto; gap:6px; }
+
 @media (max-width:1100px){
   .panel{ width:200px; }
   .cmd{ min-width:64px; padding:6px 7px; }
@@ -648,6 +653,41 @@ body.voice-thinking #grain{ opacity:.09; transition:opacity .3s; }
 .m-donut-swatch{
   width:8px; height:8px; border-radius:1px; flex:none;
 }
+
+/* ===================================================================
+   HIGHLIGHT SYSTEM — pulsing focus on active metric
+   =================================================================== */
+.m-card.m-highlight{
+  border-color:var(--accent) !important;
+  box-shadow:0 0 14px hsla(var(--hue),100%,55%,.35), inset 0 0 20px hsla(var(--hue),80%,40%,.08);
+  animation:card-highlight-pulse 1.5s ease-in-out infinite;
+}
+@keyframes card-highlight-pulse{
+  0%,100%{ box-shadow:0 0 14px hsla(var(--hue),100%,55%,.35), inset 0 0 20px hsla(var(--hue),80%,40%,.08); }
+  50%{ box-shadow:0 0 24px hsla(var(--hue),100%,60%,.55), inset 0 0 30px hsla(var(--hue),80%,40%,.14); }
+}
+
+/* highlight 3D floating labels */
+.lbl.lbl-highlight{
+  animation:lbl-highlight-pulse 1.2s ease-in-out infinite !important;
+  z-index:10;
+}
+.lbl.lbl-highlight .lbl-v{
+  color:#fff !important;
+  text-shadow:0 0 28px hsla(var(--hue),100%,70%,1), 0 0 60px hsla(var(--hue),100%,60%,.6) !important;
+}
+@keyframes lbl-highlight-pulse{
+  0%,100%{ transform:translate(-50%,-50%) scale(1); opacity:1; }
+  50%{ transform:translate(-50%,-50%) scale(1.12); opacity:1; }
+}
+
+/* voice-only dock styling — larger mic */
+#dock .mic .ring{
+  width:38px; height:38px;
+}
+#dock .mic .ring i{
+  width:11px; height:15px;
+}
 </style>
 </head>
 <body>
@@ -705,7 +745,7 @@ body.voice-thinking #grain{ opacity:.09; transition:opacity .3s; }
   <!-- CAPTION -->
   <div id="caption"><div class="ctxt"></div></div>
 
-  <div id="hint">SAY "JARVIS" OR SELECT A COMMAND · VOICE ENABLED · CTRL+J</div>
+  <div id="hint">SAY "JARVIS" TO BEGIN · VOICE POWERED · CTRL+J</div>
 
   <!-- VOICE INTELLIGENCE LAYER -->
   <div id="voice-orb-overlay" title="Click to activate Jarvis"></div>

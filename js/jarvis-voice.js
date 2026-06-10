@@ -139,15 +139,9 @@
     return null;
   }
 
-  function hasVisualCue(text) {
-    var lo = (text || "").toLowerCase();
-    return /\b(show|display|open|switch|navigate|go to|take me to|bring up|pull up|visualize|view|focus)\b/.test(lo) ||
-      /\b(screen|scene|dashboard|panel|chart|graph|visual|animation)\b/.test(lo);
-  }
-
   function resolveNavigationIntent(text, llmIntent) {
-    if (!llmIntent || VALID_SCENES.indexOf(llmIntent) === -1) return null;
-    return hasVisualCue(text) ? llmIntent : null;
+    if (llmIntent && VALID_SCENES.indexOf(llmIntent) !== -1) return llmIntent;
+    return localIntent(text);
   }
 
   function money(v) {
@@ -365,13 +359,15 @@
       "- Aim for thorough but spoken-length answers (5-12 sentences for data questions, 2-5 for general questions). Do not be terse.\n\n" +
       "NAVIGATION RULES:\n" +
       "- End your response with a JSON tag on its own line: {\"scene\":\"name\"} where name is one of: revenue, attribution, growth, leakage, agents, health, customers, forecast, feed, facility19 — or null.\n" +
-      "- Set scene to a value only when the user explicitly asks to show, display, open, switch, or navigate visuals/screens for that domain. Otherwise set scene to null.";
+      "- ALWAYS set scene to the most relevant visualization for what you are discussing. The user interacts entirely by voice — there are no buttons. You control what appears on screen.\n" +
+      "- If the user asks about revenue, set scene to 'revenue'. If they ask about customers, set scene to 'customers'. Always match the visual to the topic.\n" +
+      "- Only set scene to null for greetings, identity questions, or truly general questions with no Facility19 data relevance.";
   }
 
   function askLLM(text) {
-    var fallbackIntent = hasVisualCue(text) ? localIntent(text) : null;
+    var detectedIntent = localIntent(text);
     if (!CFG.OPENROUTER_KEY) {
-      return Promise.resolve({ text: fallbackAnswer(text), intent: fallbackIntent });
+      return Promise.resolve({ text: fallbackAnswer(text), intent: detectedIntent });
     }
     var msgs = [{ role: "system", content: systemPrompt() }];
     memory.slice(-6).forEach(function (m) { msgs.push({ role: m.role, content: m.content }); });
@@ -387,12 +383,12 @@
         var raw = (d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || "";
         var im = raw.match(/\{"scene"\s*:\s*(null|"(\w+)")\}/i);
         var llmIntent = im ? (im[2] || null) : null;
-        var intent = resolveNavigationIntent(text, llmIntent) || fallbackIntent;
+        var intent = resolveNavigationIntent(text, llmIntent);
         var clean = raw.replace(/\s*\{[^}]*"scene"[^}]*\}\s*$/, "").trim();
         return { text: clean || fallbackAnswer(text), intent: intent };
       })
       .catch(function () {
-        return { text: fallbackAnswer(text), intent: fallbackIntent };
+        return { text: fallbackAnswer(text), intent: detectedIntent };
       });
   }
 
@@ -590,6 +586,7 @@
     setState(S.THINK);
     hideTranscript();
     if (A) { A.resume(); A.play("process"); }
+    if (window.JARVIS_UI && window.JARVIS_UI.stopIdleCycle) window.JARVIS_UI.stopIdleCycle();
 
     askLLM(text).then(function (result) {
       remember("assistant", result.text);
@@ -626,6 +623,10 @@
     hideTranscript();
     setState(S.IDLE);
     startWake();
+    if (window.JARVIS_UI && window.JARVIS_UI.clearHighlights) window.JARVIS_UI.clearHighlights();
+    setTimeout(function() {
+      if (window.JARVIS_UI && window.JARVIS_UI.startIdleCycle) window.JARVIS_UI.startIdleCycle();
+    }, 8000);
   }
 
   /* ===========================================================================
@@ -708,6 +709,9 @@
     setState(S.IDLE);
     setTimeout(startupGreeting, 900);
     setTimeout(startWake, 2000);
+    setTimeout(function() {
+      if (window.JARVIS_UI && window.JARVIS_UI.startIdleCycle) window.JARVIS_UI.startIdleCycle();
+    }, 12000);
   });
 
   if (synth && synth.onvoiceschanged !== undefined) {
