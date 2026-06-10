@@ -177,6 +177,7 @@
   const bootLines = [
     "BOOTING J.A.R.V.I.S KERNEL v9.4 ...",
     "MOUNTING AGENT CLUSTER [8] ......... <span class='ok'>OK</span>",
+    "HR OPS AGENT HANDOFF ............... <span class='ok'>READY</span>",
     "NEXUS · CRM / BILLING LINK ......... <span class='ok'>OK</span>",
     "CALIBRATING VISUALIZATION ENGINE ... <span class='ok'>OK</span>",
     "VOICE INTELLIGENCE LAYER ........... <span class='ok'>ARMED</span>",

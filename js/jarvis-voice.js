@@ -29,6 +29,8 @@
   let state = S.IDLE;
   const subs = [];
   var booted = false;
+  var suppressFollowUpOnce = false;
+  var startupGreetingDone = false;
 
   function setState(next) {
     if (next === state) return;
@@ -123,6 +125,45 @@
     return hasVisualCue(text) ? llmIntent : null;
   }
 
+  function money(v) {
+    return "$" + Number(v || 0).toLocaleString();
+  }
+
+  function weakestFunnelStep() {
+    var weak = null;
+    for (var i = 1; i < D.funnel.length; i++) {
+      if (!weak || D.funnel[i].conv < weak.conv) weak = D.funnel[i];
+    }
+    return weak;
+  }
+
+  function worstLeak() {
+    var worst = D.leaks[0];
+    for (var i = 1; i < D.leaks.length; i++) {
+      if (D.leaks[i].valueLost > worst.valueLost) worst = D.leaks[i];
+    }
+    return worst;
+  }
+
+  function sceneCoachingAnswer(scene) {
+    var weak = weakestFunnelStep();
+    var leak = worstLeak();
+    var activeAgents = D.agents.filter(function (a) { return a.status === "ACTIVE"; }).length;
+    var guide = {
+      revenue: "You're at " + D.revenue.progress + "% of target (" + money(D.revenue.currentMRR) + " of " + money(D.revenue.targetMRR) + "). Biggest blockers are leakage at " + money(D.leakTotal) + "/mo and weak " + weak.label.toLowerCase() + " conversion at " + weak.conv + "%. Focus on fixing " + leak.stage.toLowerCase() + " with stronger personalization and tighter follow-up SLAs.",
+      attribution: "Channel mix is concentrated: LinkedIn is " + D.channels[0].pct + "% of MRR. To reduce risk, keep LinkedIn efficient while increasing inbound/referral throughput and partner-assisted deals.",
+      growth: "The funnel bottleneck is " + weak.label.toLowerCase() + " at " + weak.conv + "% conversion. Improve this stage first, then scale top-of-funnel volume once downstream conversion is stable.",
+      leakage: "Primary leak is " + leak.stage.toLowerCase() + " driven by " + leak.reason.toLowerCase() + ", costing " + money(leak.valueLost) + "/mo. Fix this first for the highest near-term revenue recovery.",
+      agents: activeAgents + " of " + D.agents.length + " agents are active. Rebalance workload from lower-ROI routines into Scout/Compass/Sentinel workflows where conversion impact is highest.",
+      health: "Health is " + D.health.score + ", but queue backlog and LinkedIn safety headroom are constraining throughput. Stabilize these two before aggressive scaling.",
+      customers: "Customer base is solid (" + D.customers.total + " accounts, NRR " + D.customers.nrr + "%), so the fastest gain is usually acquisition efficiency and leakage recovery rather than retention triage.",
+      forecast: "Forecast confidence is " + D.forecast.confidence + "% with a likely MRR of " + money(D.forecast.mrr.likely) + ". Improve conversion and leakage first to pull the outcome toward the high case.",
+      feed: "Today looks operationally strong with one risk signal around outbound safety headroom. Keep momentum, but protect deliverability while scaling.",
+      facility19: "Systemwide view: revenue momentum is real, but conversion leakage and safety constraints are capping growth. Fix those two constraints to accelerate toward target.",
+    };
+    return guide[scene] || null;
+  }
+
   /* ===========================================================================
      FALLBACK RESPONSES (no LLM needed)
      =========================================================================== */
@@ -141,10 +182,24 @@
       feed: D.briefing,
       facility19: "Facility19 live. MRR $" + D.revenue.currentMRR.toLocaleString() + ", " + D.customers.total + " customers, " + D.agents.length + " agents, health " + D.health.score + ".",
     };
-    if (map[scene]) return map[scene];
+    var asksWhyOrHow = /\b(why|how come|root cause|cause|reason|diagnose|analysis)\b/.test(lo);
+    var asksForActions = /\b(how|improve|increase|fix|plan|strategy|next step|recommend|advice|what should)\b/.test(lo);
+    var asksIdentity = /\b(who are you|what are you|introduce yourself)\b/.test(lo);
+    if (asksIdentity) return "I'm J.A.R.V.I.S., your professional AI assistant for Facility19. I can answer general questions, explain decisions, and provide data-backed business guidance. If you want visuals, ask me to show a screen.";
     if (/\b(hi|hello|hey)\b/.test(lo)) return "Hello. I can help with general questions and Facility19 insights. What would you like to dive into?";
     if (/\b(thank|thanks)\b/.test(lo)) return "You're welcome. If you want, I can also pull up a specific screen when you ask.";
     if (/\b(help|what can you do)\b/.test(lo)) return "I can answer general questions, explain concepts, help with writing and strategy, and report Facility19 metrics. Ask naturally, and I will only switch screens when you explicitly request visuals.";
+    if (scene && (asksWhyOrHow || asksForActions)) {
+      var coached = sceneCoachingAnswer(scene);
+      if (coached) return coached;
+    }
+    if (map[scene]) return map[scene];
+    if (/\b(why.*revenue|not achieving|not hitting|behind.*target|miss.*goal)\b/.test(lo)) {
+      return sceneCoachingAnswer("revenue");
+    }
+    if (/\?$/.test((text || "").trim()) || /\b(why|how|what|when|where|who)\b/.test(lo)) {
+      return "Good question. I can help with general reasoning, writing, planning, and Facility19 operations. Share a bit more context and I will give a precise, professional answer.";
+    }
     return "I can answer general questions as well as Facility19 metrics. Ask anything, and if you want visuals, say things like 'show' or 'open' for the screen you want.";
   }
 
@@ -159,6 +214,7 @@
       "RULES:\n" +
       "- Answer the user's actual question first; do not force metrics unless the user asks for business/dashboard data.\n" +
       "- For Facility19 data questions, use exact metrics from the knowledge base.\n" +
+      "- For questions like 'who are you' or strategic 'why are we behind', respond with identity/analysis, not just metric recitation.\n" +
       "- For general questions, answer naturally like a high-quality general assistant.\n" +
       "- Keep answers concise (usually 2-5 sentences).\n" +
       "- End your response with a JSON tag on its own line: {\"scene\":\"name\"} where name is one of: revenue, attribution, growth, leakage, agents, health, customers, forecast, feed, facility19 — or null.\n" +
@@ -310,7 +366,9 @@
   var ttsAudio = null;
   var synth = window.speechSynthesis;
 
-  function speak(text) {
+  function speak(text, opts) {
+    opts = opts || {};
+    suppressFollowUpOnce = !!opts.noFollowUp;
     setState(S.SPEAK);
     showCaption(text);
 
@@ -398,7 +456,21 @@
   }
 
   function onSpeakDone() {
+    if (suppressFollowUpOnce) {
+      suppressFollowUpOnce = false;
+      deactivate();
+      return;
+    }
     followUp();
+  }
+
+  function startupGreeting() {
+    if (startupGreetingDone) return;
+    startupGreetingDone = true;
+    stopWake();
+    var msg = "Welcome to Facility19. HR operations is online for startup handoff. JARVIS is now active and ready to assist with any question.";
+    if (A) { A.resume(); A.play("online"); }
+    setTimeout(function () { speak(msg, { noFollowUp: true }); }, 450);
   }
 
   function deactivate() {
@@ -485,6 +557,7 @@
   window.addEventListener("jarvis-booted", function () {
     booted = true;
     setState(S.IDLE);
+    setTimeout(startupGreeting, 900);
     setTimeout(startWake, 2000);
   });
 
