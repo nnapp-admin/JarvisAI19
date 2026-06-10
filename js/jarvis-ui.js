@@ -557,15 +557,103 @@
     showTitle(cmd);
     setCtx(scene);
 
-    if (!opts.fromVoice) {
+    if (opts.fromVoice && !opts.silent) {
+      sequenceHighlights(scene);
+    }
+
+    if (!opts.fromVoice && !opts.silent) {
       capEl.style.opacity = 1;
-      capTxt.innerHTML = '<span style="color:var(--ink-faint)">› recognizing command…</span>';
+      capTxt.innerHTML = '<span style="color:var(--ink-faint)">› analyzing…</span>';
       if (A) setTimeout(() => A.play("process"), 500);
-      setTimeout(() => { if (A) A.play("chime"); narrate(cmd.narration); }, 1100);
+      setTimeout(() => {
+        if (A) A.play("chime");
+        narrate(cmd.narration);
+        sequenceHighlights(scene);
+      }, 1100);
     }
   }
 
-  window.JARVIS_UI = { run: run, narrate: narrate, setHue: setHue, setCtx: setCtx, engage: engageSystem };
+  /* ---- highlight system for narration ----------------------------------- */
+  var highlightTimers = [];
+
+  function clearHighlights() {
+    highlightTimers.forEach(function(t) { clearTimeout(t); });
+    highlightTimers = [];
+    document.querySelectorAll(".m-card.m-highlight").forEach(function(el) { el.classList.remove("m-highlight"); });
+    document.querySelectorAll(".lbl.lbl-highlight").forEach(function(el) { el.classList.remove("lbl-highlight"); });
+  }
+
+  function highlightCard(idx) {
+    var body = $("#ctx-body");
+    if (!body) return;
+    var cards = body.querySelectorAll(".m-card");
+    cards.forEach(function(el) { el.classList.remove("m-highlight"); });
+    if (idx >= 0 && idx < cards.length) {
+      cards[idx].classList.add("m-highlight");
+      cards[idx].scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+
+  function highlightLabel(keyword) {
+    document.querySelectorAll(".lbl.lbl-highlight").forEach(function(el) { el.classList.remove("lbl-highlight"); });
+    if (!keyword) return;
+    var kw = keyword.toUpperCase();
+    document.querySelectorAll(".lbl").forEach(function(el) {
+      if (el.textContent.toUpperCase().indexOf(kw) !== -1) {
+        el.classList.add("lbl-highlight");
+      }
+    });
+  }
+
+  function sequenceHighlights(scene) {
+    clearHighlights();
+    var sequences = {
+      revenue:     [{ card:0, label:"MRR",        delay:1500 }, { card:1, label:"PROGRESS",   delay:6000 }, { card:2, label:"ARR",        delay:10000 }, { card:3, label:"NET NEW",    delay:13000 }, { card:4, label:"CONFIDENCE", delay:16000 }],
+      attribution: [{ card:0, label:"FACILITY19",  delay:1500 }, { card:1, label:"LINKEDIN",   delay:4000 }, { card:2, label:"INBOUND",    delay:8000 },  { card:3, label:"REFERRAL",   delay:11000 }, { card:4, label:"PAID",       delay:14000 }, { card:5, label:"PARTNER", delay:17000 }],
+      growth:      [{ card:0, label:"INMAIL",      delay:1500 }, { card:1, label:"CONNECTION",  delay:5000 }, { card:2, label:"REPL",       delay:8500 },  { card:3, label:"MEETING",    delay:12000 }, { card:4, label:"CONVERSION", delay:16000 }],
+      leakage:     [{ card:0, label:"LEAKAGE",     delay:1500 }, { card:1, label:"INMAIL",      delay:5000 }, { card:2, label:"CONNECTION",  delay:9000 },  { card:3, label:"REPLY",      delay:13000 }],
+      agents:      [{ card:0, label:"SCOUT",       delay:1500 }, { card:1, label:"SCOUT",       delay:4000 }, { card:2, label:"COMPASS",    delay:7000 },  { card:3, label:"SENTINEL",   delay:10000 }, { card:4, label:"FORGE",      delay:13000 }, { card:5, label:"REED", delay:15000 }, { card:6, label:"NEXUS", delay:17000 }],
+      health:      [{ card:0, label:"HEALTH",      delay:1500 }, { card:1, label:"LINKEDIN API",delay:5000 }, { card:2, label:"GHL",        delay:7500 },  { card:3, label:"EMAIL",      delay:9500 },  { card:4, label:"QUEUE",      delay:11500 }, { card:5, label:"ERROR", delay:13500 }, { card:6, label:"SAFETY", delay:15500 }],
+      customers:   [{ card:0, label:"CUSTOMER",    delay:1500 }, { card:1, label:"ENTERPRISE",  delay:5000 }, { card:2, label:"SUBSCRIPTION",delay:8500 },  { card:3, label:"RETENTION",  delay:11000 }, { card:4, label:"ARPU",       delay:14000 }, { card:5, label:"CHURN", delay:16000 }],
+      forecast:    [{ card:0, label:"FORECAST",    delay:1500 }, { card:1, label:"SCENARIO",    delay:5000 }, { card:2, label:"NEW CUSTOMER",delay:9000 },  { card:3, label:"CHURN",      delay:12000 }, { card:4, label:"MEETING",    delay:14500 }, { card:5, label:"CONFIDENCE", delay:17000 }],
+      feed:        [{ card:0, label:"INTELLIGENCE",delay:1500 }, { card:1, label:"LEADS",       delay:4000 }, { card:2, label:"OUTREACH",   delay:6000 },  { card:3, label:"REPL",       delay:8000 },  { card:4, label:"MEETING",    delay:10000 }, { card:5, label:"REVENUE", delay:12000 }, { card:6, label:"ALERT", delay:14000 }],
+      facility19:  [{ card:0, label:"REVENUE",     delay:1500 }, { card:1, label:"CUSTOMER",    delay:4500 }, { card:2, label:"AGENT",      delay:7000 },  { card:3, label:"HEALTH",     delay:9500 },  { card:4, label:"FORECAST",   delay:12000 }, { card:5, label:"LEAKAGE", delay:14500 }],
+    };
+    var seq = sequences[scene];
+    if (!seq) return;
+    seq.forEach(function(step) {
+      var t = setTimeout(function() {
+        highlightCard(step.card);
+        highlightLabel(step.label);
+      }, step.delay);
+      highlightTimers.push(t);
+    });
+    var lastDelay = seq[seq.length - 1].delay;
+    var t2 = setTimeout(clearHighlights, lastDelay + 4000);
+    highlightTimers.push(t2);
+  }
+
+  /* ---- idle scene cycling (lively ambient behavior) ---------------------- */
+  var idleCycleTimer = null;
+  var idleScenes = ["revenue", "attribution", "growth", "customers", "forecast", "health", "agents", "facility19"];
+  var idleIdx = 0;
+
+  function startIdleCycle() {
+    stopIdleCycle();
+    idleCycleTimer = setInterval(function() {
+      if (activeScene === "home" || !activeScene) {
+        var scene = idleScenes[idleIdx % idleScenes.length];
+        idleIdx++;
+        run(scene, { fromVoice: true, silent: true });
+      }
+    }, 18000);
+  }
+
+  function stopIdleCycle() {
+    if (idleCycleTimer) { clearInterval(idleCycleTimer); idleCycleTimer = null; }
+  }
+
+  window.JARVIS_UI = { run: run, narrate: narrate, setHue: setHue, setCtx: setCtx, engage: engageSystem, highlightCard: highlightCard, highlightLabel: highlightLabel, sequenceHighlights: sequenceHighlights, clearHighlights: clearHighlights, startIdleCycle: startIdleCycle, stopIdleCycle: stopIdleCycle };
 
   document.addEventListener("click", function ensureAudio() {
     if (A) { if (!A.ready) A.start(); else A.resume(); }
