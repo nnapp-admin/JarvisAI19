@@ -185,11 +185,42 @@
 
   // move camera + theme; build/teardown scene groups with a cinematic beat
   JV._pendingGo = null;
+  JV._bridges = [];
+
+  // ---- cinematic particle bridge -----------------------------------------
+  // A burst of light that erupts at the core as one scene dissolves and the
+  // next materializes — the "particle bridge" between destinations.
+  function spawnBridge(hue) {
+    const N = 280;
+    const pos = new Float32Array(N * 3);
+    const seed = new Float32Array(N * 4); // dirx, diry, dirz, speed
+    for (let i = 0; i < N; i++) {
+      const a = Math.random() * Math.PI * 2, b = Math.acos(Math.random() * 2 - 1);
+      const dx = Math.sin(b) * Math.cos(a), dy = Math.cos(b), dz = Math.sin(b) * Math.sin(a);
+      const r = 0.6 + Math.random() * 1.6;
+      pos[i * 3] = dx * r; pos[i * 3 + 1] = dy * r; pos[i * 3 + 2] = dz * r;
+      seed[i * 4] = dx; seed[i * 4 + 1] = dy; seed[i * 4 + 2] = dz; seed[i * 4 + 3] = 7 + Math.random() * 12;
+    }
+    const pts = JV.points(pos, { size: 0.2, hue: hue == null ? 205 : hue, opacity: 0 });
+    pts.userData._bridge = { seed, N };
+    sceneRoot.add(pts);
+    JV._bridges.push(pts);
+    gsap.to(pts.material, {
+      opacity: 0.95, duration: 0.45, ease: "power2.out",
+      onComplete() { gsap.to(pts.material, { opacity: 0, duration: 1.4, ease: "power2.in" }); },
+    });
+    setTimeout(() => {
+      const idx = JV._bridges.indexOf(pts);
+      if (idx >= 0) JV._bridges.splice(idx, 1);
+      sceneRoot.remove(pts); disposeGroup(pts);
+    }, 2100);
+  }
+  JV.spawnBridge = spawnBridge;
 
   JV.go = function (key, opts) {
     opts = opts || {};
     const def = JV.scenes[key];
-    if (!def) return;
+    if (!def) { if (opts.onArrive) { try { opts.onArrive(); } catch (e) {} } return; }
 
     if (JV.transitioning) {
       JV._pendingGo = { key: key, opts: opts };
@@ -199,6 +230,7 @@
     JV.driftAmt = 0.25; // settle drift during move
 
     const prev = JV.current;
+    const cinematic = !!opts.cinematic && !!prev;
 
     const buildNext = () => {
       const ctx = {};
@@ -209,18 +241,20 @@
       JV.current = { key, def, group, ctx };
 
       // intro: scale to 1 + custom enter
-      gsap.to(group.scale, { x: 1, y: 1, z: 1, duration: 1.3, ease: "power3.out" });
+      gsap.to(group.scale, { x: 1, y: 1, z: 1, duration: cinematic ? 1.5 : 1.3, ease: "power3.out" });
       if (def.enter) def.enter(group, ctx);
 
-      // camera flight
+      // camera flight (flythrough to destination)
       const c = def.camera || { pos: [0, 0, 17], look: [0, 0, 0] };
       gsap.to(JV.cam, {
         px: c.pos[0], py: c.pos[1], pz: c.pos[2],
         lx: c.look[0], ly: c.look[1], lz: c.look[2],
-        duration: 1.7, ease: "power3.inOut",
+        duration: cinematic ? 2.0 : 1.7, ease: "power3.inOut",
         onComplete: () => {
           JV.transitioning = false;
           JV.driftAmt = def.drift == null ? 1 : def.drift;
+          // destination has fully materialized — narration may now begin
+          if (opts.onArrive) { try { opts.onArrive(); } catch (e) {} }
           if (JV._pendingGo) {
             var p = JV._pendingGo;
             JV._pendingGo = null;
@@ -232,10 +266,10 @@
       if (def.bloom) gsap.to(bloom, { strength: def.bloom.strength, radius: def.bloom.radius, threshold: def.bloom.threshold, duration: 1.4 });
 
       // labels appear once the camera nears rest
-      JV.fadeLabels(group, 1, 0.6, 0.9);
+      JV.fadeLabels(group, 1, 0.6, cinematic ? 1.1 : 0.9);
     };
 
-    if (prev) {
+    const dissolvePrev = (after) => {
       JV.fadeLabels(prev.group, 0, 0.35, 0);
       gsap.to(prev.group.scale, { x: 0.7, y: 0.7, z: 0.7, duration: 0.6, ease: "power2.in" });
       gsap.to(prev.group.rotation, { y: prev.group.rotation.y + 0.5, duration: 0.6, ease: "power2.in" });
@@ -246,7 +280,21 @@
           gsap.to(o.material, { opacity: 0, duration: 0.5, ease: "power2.in" });
         }
       });
-      setTimeout(() => { sceneRoot.remove(prev.group); disposeGroup(prev.group); buildNext(); }, 560);
+      setTimeout(() => { sceneRoot.remove(prev.group); disposeGroup(prev.group); after(); }, cinematic ? 680 : 560);
+    };
+
+    if (prev) {
+      if (cinematic) {
+        // 1) camera pullback  2) particle bridge  3) environment dissolve
+        // 4) camera flythrough into the materializing destination
+        spawnBridge(205);
+        gsap.to(JV.cam, {
+          pz: JV.cam.pz + 7, duration: 0.6, ease: "power2.inOut",
+          onComplete: () => dissolvePrev(buildNext),
+        });
+      } else {
+        dissolvePrev(buildNext);
+      }
     } else {
       buildNext();
     }
@@ -334,6 +382,20 @@
 
     if (JV.current && JV.current.def.update) {
       try { JV.current.def.update(t, dt, JV.current.group, JV.current.ctx); } catch (e) {}
+    }
+
+    // cinematic transition bridge particles
+    for (let bi = 0; bi < JV._bridges.length; bi++) {
+      const b = JV._bridges[bi], u = b.userData._bridge;
+      const a = b.geometry.attributes.position.array, s = u.seed;
+      for (let k = 0; k < u.N; k++) {
+        const sp = s[k * 4 + 3];
+        a[k * 3] += s[k * 4] * sp * dt;
+        a[k * 3 + 1] += s[k * 4 + 1] * sp * dt;
+        a[k * 3 + 2] += s[k * 4 + 2] * sp * dt;
+      }
+      b.geometry.attributes.position.needsUpdate = true;
+      b.rotation.y += dt * 0.5;
     }
 
     // camera: base pose + idle drift + pointer parallax

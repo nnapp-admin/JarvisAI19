@@ -554,11 +554,11 @@
     setHue(cmd.theme.hue);
     if (A) {
       A.setSceneHue(cmd.theme.hue);
-      if (scene === "facility19") A.play("whoosh");
+      if (scene === "facility19" || opts.cinematic) A.play("whoosh");
       else A.play("engage", cmd.theme.hue);
       if (scene === "leakage" || scene === "health") setTimeout(() => A.play("alert"), 700);
     }
-    J.go(scene);
+    J.go(scene, { cinematic: opts.cinematic, onArrive: opts.onArrive });
     showTitle(cmd);
     setCtx(scene);
 
@@ -608,6 +608,25 @@
         el.classList.add("lbl-highlight");
       }
     });
+  }
+
+  // highlight a specific metric (3D label + matching context card) by keyword —
+  // used when narration drills into a single element of the active scene
+  function highlightMetric(keyword) {
+    if (!keyword) return;
+    highlightLabel(keyword);
+    var body = $("#ctx-body");
+    if (!body) return;
+    var cards = body.querySelectorAll(".m-card");
+    var kw = keyword.toUpperCase();
+    cards.forEach(function(el) { el.classList.remove("m-highlight"); });
+    for (var i = 0; i < cards.length; i++) {
+      if (cards[i].textContent.toUpperCase().indexOf(kw) !== -1) {
+        cards[i].classList.add("m-highlight");
+        cards[i].scrollIntoView({ behavior: "smooth", block: "nearest" });
+        break;
+      }
+    }
   }
 
   function sequenceHighlights(scene) {
@@ -663,7 +682,7 @@
   function pauseIdleCycle() { idlePaused = true; }
   function resumeIdleCycle() { idlePaused = false; if (!idleCycleTimer) startIdleCycle(); }
 
-  window.JARVIS_UI = { run: run, narrate: narrate, setHue: setHue, setCtx: setCtx, engage: engageSystem, highlightCard: highlightCard, highlightLabel: highlightLabel, sequenceHighlights: sequenceHighlights, clearHighlights: clearHighlights, startIdleCycle: startIdleCycle, stopIdleCycle: stopIdleCycle, pauseIdleCycle: pauseIdleCycle, resumeIdleCycle: resumeIdleCycle };
+  window.JARVIS_UI = { run: run, narrate: narrate, setHue: setHue, setCtx: setCtx, engage: engageSystem, highlightCard: highlightCard, highlightLabel: highlightLabel, highlightMetric: highlightMetric, sequenceHighlights: sequenceHighlights, clearHighlights: clearHighlights, startIdleCycle: startIdleCycle, stopIdleCycle: stopIdleCycle, pauseIdleCycle: pauseIdleCycle, resumeIdleCycle: resumeIdleCycle };
 
   document.addEventListener("click", function ensureAudio() {
     if (A) { if (!A.ready) A.start(); else A.resume(); }

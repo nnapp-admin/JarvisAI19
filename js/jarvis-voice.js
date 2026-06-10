@@ -304,6 +304,46 @@
   }
 
   /* ===========================================================================
+     SCENE-AWARE NARRATION
+     Spoken intros that match the cinematic that just materialized on screen.
+     =========================================================================== */
+  var SCENE_INTROS = {
+    revenue: "You are now viewing the revenue goal universe.",
+    attribution: "You are now viewing the revenue attribution galaxy.",
+    growth: "You are now viewing the Facility19 growth engine.",
+    leakage: "You are now viewing the opportunity leakage simulation.",
+    agents: "You are now viewing the agent value city.",
+    health: "You are now viewing the outbound health control room.",
+    customers: "You are now viewing the customer universe.",
+    forecast: "You are now viewing the future forecast simulation.",
+    feed: "You are now viewing the daily intelligence feed.",
+    facility19: "You are now viewing the complete Facility19 universe.",
+  };
+
+  function commandFor(scene) {
+    for (var i = 0; i < D.commands.length; i++) if (D.commands[i].scene === scene) return D.commands[i];
+    return null;
+  }
+
+  // Build narration that matches the scene currently on screen. Used for the
+  // no-LLM path (and as the always-available fallback).
+  function sceneNarration(scene, text) {
+    if (scene) {
+      var cmd = commandFor(scene);
+      if (cmd) {
+        var intro = SCENE_INTROS[scene] || "";
+        var lo = (text || "").toLowerCase();
+        if (/\b(why|how come|root cause|cause|reason|diagnose|improve|increase|fix|recommend|advice|what should|strategy)\b/.test(lo)) {
+          var coached = sceneCoachingAnswer(scene);
+          if (coached) return (intro ? intro + " " : "") + coached;
+        }
+        return (intro ? intro + " " : "") + cmd.narration;
+      }
+    }
+    return fallbackAnswer(text);
+  }
+
+  /* ===========================================================================
      FALLBACK RESPONSES (no LLM needed)
      =========================================================================== */
   function fallbackAnswer(text) {
@@ -410,10 +450,12 @@
   /* ===========================================================================
      OPENROUTER LLM
      =========================================================================== */
-  function systemPrompt() {
-    var scene = J.current ? J.current.key : "home";
+  function systemPrompt(knownScene) {
+    var scene = knownScene || (J.current ? J.current.key : "home");
+    var sceneTitle = SCENE_INTROS[scene] ? SCENE_INTROS[scene] : "";
     return "You are J.A.R.V.I.S., a personal AI executive assistant for Facility19. You are not a vague chatbot — you are a trusted advisor who knows the business inside and out. Think of yourself like a chief of staff who has memorized every metric and can explain any of them in plain, confident language.\n\n" +
-      "ACTIVE SCENE: " + scene + "\n\n" +
+      "ACTIVE SCENE: " + scene + "\n" +
+      "SCENE-AWARE NARRATION: The visualization for this topic has ALREADY transitioned onto the screen before you speak. Narrate as if the user is looking at it right now — reference the visual elements that are currently visible (the funnel building itself, particles flowing, metrics animating into place). You may open with something like \"" + (sceneTitle || "You are now viewing this scene.") + "\" Then walk through the live numbers that are on screen.\n\n" +
       "KNOWLEDGE BASE:\n" + JSON.stringify(buildKB()) + "\n\n" +
       "HOW TO RESPOND:\n" +
       "- When the user asks about a business area (revenue, customers, etc.), walk through each relevant metric ONE BY ONE. Do not lump everything into one sentence.\n" +
@@ -437,21 +479,30 @@
       "- Understand intent naturally. 'Be quiet' or 'silence the background' means sound_off. 'Stay on this screen' or 'keep this view' means idle_off. 'Turn the music back on' means sound_on. Do not require exact phrases.";
   }
 
-  function askLLM(text) {
-    var detectedIntent = localIntent(text);
+  // Produce the NARRATION TEXT for a turn. Navigation is owned by the
+  // IntentRouter + SceneManager; this only generates the (secondary) speech.
+  // opts.scene  — the scene that has been / is being shown (for scene-aware text)
+  // opts.answer — a pre-computed answer (e.g. a "strongest source" follow-up)
+  function askLLM(text, opts) {
+    opts = opts || {};
+    var knownScene = opts.scene || null;
     var detectedAction = detectAction(text);
 
     if (detectedAction) {
       var actionMsg = executeAction(detectedAction);
       if (actionMsg) {
-        return Promise.resolve({ text: actionMsg, intent: detectedIntent, action: detectedAction });
+        return Promise.resolve({ text: actionMsg, action: detectedAction });
       }
     }
 
-    if (!CFG.OPENROUTER_KEY) {
-      return Promise.resolve({ text: fallbackAnswer(text), intent: detectedIntent, action: null });
+    if (opts.answer) {
+      return Promise.resolve({ text: opts.answer, action: null });
     }
-    var msgs = [{ role: "system", content: systemPrompt() }];
+
+    if (!CFG.OPENROUTER_KEY) {
+      return Promise.resolve({ text: sceneNarration(knownScene, text), action: null });
+    }
+    var msgs = [{ role: "system", content: systemPrompt(knownScene) }];
     memory.slice(-6).forEach(function (m) { msgs.push({ role: m.role, content: m.content }); });
     msgs.push({ role: "user", content: text });
 
@@ -463,11 +514,8 @@
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(function (d) {
         var raw = (d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || "";
-        var im = raw.match(/\{[^}]*"scene"\s*:\s*(null|"(\w+)")[^}]*\}/i);
-        var llmIntent = im ? (im[2] || null) : null;
         var am = raw.match(/\{[^}]*"action"\s*:\s*(null|"(\w+)")[^}]*\}/i);
         var llmAction = am ? (am[2] || null) : null;
-        var intent = resolveNavigationIntent(text, llmIntent);
         var clean = raw.replace(/\s*\{[^}]*"scene"[^}]*\}\s*$/m, "").trim();
 
         if (llmAction && VALID_ACTIONS.indexOf(llmAction) !== -1) {
@@ -475,10 +523,10 @@
           if (actionResult && !clean) clean = actionResult;
         }
 
-        return { text: clean || fallbackAnswer(text), intent: intent, action: llmAction };
+        return { text: clean || sceneNarration(knownScene, text), action: llmAction };
       })
       .catch(function () {
-        return { text: fallbackAnswer(text), intent: detectedIntent, action: null };
+        return { text: sceneNarration(knownScene, text), action: null };
       });
   }
 
@@ -603,6 +651,7 @@
     opts = opts || {};
     suppressFollowUpOnce = !!opts.noFollowUp;
     setState(S.SPEAK);
+    if (window.SceneManager && window.SceneManager.beginNarration) window.SceneManager.beginNarration();
     showCaption(text);
 
     elevenLabsTTS(text).then(function (ok) {
@@ -671,6 +720,11 @@
     doActivate(null);
   }
 
+  // CORE TURN — scene is the PRIMARY output, narration is secondary.
+  //   1. recognize speech (done)            2. detect intent (IntentRouter)
+  //   3. select + transition scene FIRST (SceneManager, cinematic)
+  //   4. generate narration text in parallel
+  //   5. begin narration only AFTER the destination scene has materialized
   function processInput(text) {
     remember("user", text);
     setState(S.THINK);
@@ -679,19 +733,48 @@
     var UI = window.JARVIS_UI;
     if (UI && UI.pauseIdleCycle) UI.pauseIdleCycle();
 
-    askLLM(text).then(function (result) {
-      remember("assistant", result.text);
-      var sceneToShow = result.intent || localIntent(text);
-      var didNavigate = false;
-      if (sceneToShow && UI) {
-        UI.run(sceneToShow, { fromVoice: true });
-        didNavigate = true;
+    var Router = window.IntentRouter;
+    var SM = window.SceneManager;
+    var routed = Router ? Router.route(text) : null;
+
+    var targetScene = null;     // scene narration should describe
+    var routedAnswer = null;    // pre-computed answer for superlative follow-ups
+    var sceneReady = Promise.resolve(false); // resolves when the scene is on screen
+
+    if (routed && routed.scene && routed.confidence >= (Router ? Router.threshold : 0.55)) {
+      targetScene = routed.scene;
+      if (routed.answer) routedAnswer = routed.answer;
+
+      if (routed.type === "stay") {
+        // keep the current scene; narration adds depth with visual context
+        targetScene = (SM && SM.getState().active) || routed.scene;
+      } else if (routed.type === "highlight") {
+        // remain on scene, spotlight the element being discussed
+        if (SM) sceneReady = SM.focus(routed.scene, routed.target);
+        else if (UI) UI.highlightMetric && UI.highlightMetric(routed.target && routed.target.keyword);
+      } else {
+        // navigate (optionally highlighting a target once we arrive)
+        if (SM) {
+          sceneReady = SM.transitionTo(routed.scene, { cinematic: true });
+          if (routed.navHighlight && routed.target) {
+            sceneReady.then(function () { setTimeout(function () { SM.highlight(routed.target); }, 500); });
+          }
+        } else if (UI) {
+          UI.run(routed.scene, { fromVoice: true });
+          sceneReady = Promise.resolve(true);
+        }
       }
-      setTimeout(function () { speak(result.text); }, didNavigate ? 600 : 100);
+    }
+
+    askLLM(text, { scene: targetScene, answer: routedAnswer }).then(function (result) {
+      remember("assistant", result.text);
+      // narration begins only once the scene transition has completed
+      sceneReady.then(function () { speak(result.text); });
     });
   }
 
   function onSpeakDone() {
+    if (window.SceneManager && window.SceneManager.endNarration) window.SceneManager.endNarration();
     if (suppressFollowUpOnce) {
       suppressFollowUpOnce = false;
       deactivate();
