@@ -100,6 +100,7 @@
     feed: ["today", "summary", "briefing", "daily", "summarize", "activity", "happened"],
     facility19: ["facility", "everything", "overview", "entire", "whole system", "big picture", "show me facility"],
   };
+  var VALID_SCENES = Object.keys(INTENTS);
 
   function localIntent(text) {
     var lo = text.toLowerCase();
@@ -111,10 +112,22 @@
     return null;
   }
 
+  function hasVisualCue(text) {
+    var lo = (text || "").toLowerCase();
+    return /\b(show|display|open|switch|navigate|go to|take me to|bring up|pull up|visualize|view|focus)\b/.test(lo) ||
+      /\b(screen|scene|dashboard|panel|chart|graph|visual|animation)\b/.test(lo);
+  }
+
+  function resolveNavigationIntent(text, llmIntent) {
+    if (!llmIntent || VALID_SCENES.indexOf(llmIntent) === -1) return null;
+    return hasVisualCue(text) ? llmIntent : null;
+  }
+
   /* ===========================================================================
      FALLBACK RESPONSES (no LLM needed)
      =========================================================================== */
   function fallbackAnswer(text) {
+    var lo = (text || "").toLowerCase();
     var scene = localIntent(text);
     var map = {
       revenue: "Current MRR is $" + D.revenue.currentMRR.toLocaleString() + ", " + D.revenue.progress + "% toward the $" + D.revenue.targetMRR.toLocaleString() + " target. Net new this period is $" + D.revenue.netNew.toLocaleString() + ".",
@@ -128,7 +141,11 @@
       feed: D.briefing,
       facility19: "Facility19 live. MRR $" + D.revenue.currentMRR.toLocaleString() + ", " + D.customers.total + " customers, " + D.agents.length + " agents, health " + D.health.score + ".",
     };
-    return map[scene] || "I'm online. Current MRR is $" + D.revenue.currentMRR.toLocaleString() + " at " + D.revenue.progress + "% of target. What would you like to know?";
+    if (map[scene]) return map[scene];
+    if (/\b(hi|hello|hey)\b/.test(lo)) return "Hello. I can help with general questions and Facility19 insights. What would you like to dive into?";
+    if (/\b(thank|thanks)\b/.test(lo)) return "You're welcome. If you want, I can also pull up a specific screen when you ask.";
+    if (/\b(help|what can you do)\b/.test(lo)) return "I can answer general questions, explain concepts, help with writing and strategy, and report Facility19 metrics. Ask naturally, and I will only switch screens when you explicitly request visuals.";
+    return "I can answer general questions as well as Facility19 metrics. Ask anything, and if you want visuals, say things like 'show' or 'open' for the screen you want.";
   }
 
   /* ===========================================================================
@@ -136,20 +153,22 @@
      =========================================================================== */
   function systemPrompt() {
     var scene = J.current ? J.current.key : "home";
-    return "You are J.A.R.V.I.S., the AI command interface for Facility19. Speak with calm authority, data precision, and subtle confidence.\n\n" +
+    return "You are J.A.R.V.I.S., the AI assistant for Facility19. You can answer both Facility19 business questions and general questions like a normal LLM assistant. Speak with calm confidence and be genuinely helpful.\n\n" +
       "ACTIVE SCENE: " + scene + "\n\n" +
       "KNOWLEDGE BASE:\n" + JSON.stringify(buildKB()) + "\n\n" +
       "RULES:\n" +
-      "- 2-3 sentences max. Concise and data-driven.\n" +
-      "- Use exact metrics from the knowledge base.\n" +
-      "- For contextual follow-ups about the current scene, answer in context.\n" +
-      "- End your response with a JSON tag on its own line: {\"scene\":\"name\"} where name is one of: revenue, attribution, growth, leakage, agents, health, customers, forecast, feed, facility19 — or null if no navigation needed.\n" +
-      "- Only navigate when the user clearly asks about a different domain.";
+      "- Answer the user's actual question first; do not force metrics unless the user asks for business/dashboard data.\n" +
+      "- For Facility19 data questions, use exact metrics from the knowledge base.\n" +
+      "- For general questions, answer naturally like a high-quality general assistant.\n" +
+      "- Keep answers concise (usually 2-5 sentences).\n" +
+      "- End your response with a JSON tag on its own line: {\"scene\":\"name\"} where name is one of: revenue, attribution, growth, leakage, agents, health, customers, forecast, feed, facility19 — or null.\n" +
+      "- Set scene to a value only when the user explicitly asks to show, display, open, switch, or navigate visuals/screens for that domain. Otherwise set scene to null.";
   }
 
   function askLLM(text) {
+    var fallbackIntent = hasVisualCue(text) ? localIntent(text) : null;
     if (!CFG.OPENROUTER_KEY) {
-      return Promise.resolve({ text: fallbackAnswer(text), intent: localIntent(text) });
+      return Promise.resolve({ text: fallbackAnswer(text), intent: fallbackIntent });
     }
     var msgs = [{ role: "system", content: systemPrompt() }];
     memory.slice(-6).forEach(function (m) { msgs.push({ role: m.role, content: m.content }); });
@@ -163,13 +182,14 @@
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(function (d) {
         var raw = (d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || "";
-        var im = raw.match(/\{"scene"\s*:\s*"(\w+|null)"\}/);
-        var intent = im ? (im[1] === "null" ? null : im[1]) : localIntent(text);
+        var im = raw.match(/\{"scene"\s*:\s*(null|"(\w+)")\}/i);
+        var llmIntent = im ? (im[2] || null) : null;
+        var intent = resolveNavigationIntent(text, llmIntent) || fallbackIntent;
         var clean = raw.replace(/\s*\{[^}]*"scene"[^}]*\}\s*$/, "").trim();
         return { text: clean || fallbackAnswer(text), intent: intent };
       })
       .catch(function () {
-        return { text: fallbackAnswer(text), intent: localIntent(text) };
+        return { text: fallbackAnswer(text), intent: fallbackIntent };
       });
   }
 
@@ -368,10 +388,12 @@
 
     askLLM(text).then(function (result) {
       remember("assistant", result.text);
+      var didNavigate = false;
       if (result.intent && window.JARVIS_UI) {
         window.JARVIS_UI.run(result.intent, { fromVoice: true });
+        didNavigate = true;
       }
-      setTimeout(function () { speak(result.text); }, result.intent ? 600 : 100);
+      setTimeout(function () { speak(result.text); }, didNavigate ? 600 : 100);
     });
   }
 
