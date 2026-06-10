@@ -184,9 +184,17 @@
   JV.register = function (key, def) { JV.scenes[key] = def; };
 
   // move camera + theme; build/teardown scene groups with a cinematic beat
-  JV.go = function (key) {
+  JV._pendingGo = null;
+
+  JV.go = function (key, opts) {
+    opts = opts || {};
     const def = JV.scenes[key];
-    if (!def || JV.transitioning) return;
+    if (!def) return;
+
+    if (JV.transitioning) {
+      JV._pendingGo = { key: key, opts: opts };
+      return;
+    }
     JV.transitioning = true;
     JV.driftAmt = 0.25; // settle drift during move
 
@@ -210,7 +218,15 @@
         px: c.pos[0], py: c.pos[1], pz: c.pos[2],
         lx: c.look[0], ly: c.look[1], lz: c.look[2],
         duration: 1.7, ease: "power3.inOut",
-        onComplete: () => { JV.transitioning = false; JV.driftAmt = def.drift == null ? 1 : def.drift; },
+        onComplete: () => {
+          JV.transitioning = false;
+          JV.driftAmt = def.drift == null ? 1 : def.drift;
+          if (JV._pendingGo) {
+            var p = JV._pendingGo;
+            JV._pendingGo = null;
+            setTimeout(function() { JV.go(p.key, p.opts); }, 50);
+          }
+        },
       });
       // bloom tuning per scene
       if (def.bloom) gsap.to(bloom, { strength: def.bloom.strength, radius: def.bloom.radius, threshold: def.bloom.threshold, duration: 1.4 });

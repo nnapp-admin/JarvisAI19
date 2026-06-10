@@ -178,12 +178,18 @@
 
     switch (action) {
       case "sound_off":
-        if (A) A.toggle(false);
+        if (A) {
+          if (A.ready) A.toggle(false);
+        }
         if (soundBadge) { soundBadge.classList.add("off"); var ss = document.getElementById("sound-state"); if (ss) ss.textContent = "OFF"; }
         return "Done. I have muted all audio — the background ambience and sound effects are off. Just ask me to turn them back on whenever you like.";
 
       case "sound_on":
-        if (A) { if (!A.ready) A.start(); A.resume(); A.toggle(true); }
+        if (A) {
+          if (!A.ready) A.start();
+          try { A.resume(); } catch(e) {}
+          setTimeout(function() { if (A) { try { A.resume(); } catch(e) {} A.toggle(true); } }, 200);
+        }
         if (soundBadge) { soundBadge.classList.remove("off"); var ss2 = document.getElementById("sound-state"); if (ss2) ss2.textContent = "ON"; }
         return "Audio is back on. You should hear the ambient soundscape now. Let me know if you want to adjust anything else.";
 
@@ -196,7 +202,7 @@
         return "Automatic scene cycling is back on. I will rotate through the different views to keep the display lively. Say stop anytime.";
 
       case "stop":
-        if (A) A.toggle(false);
+        if (A && A.ready) A.toggle(false);
         if (soundBadge) { soundBadge.classList.add("off"); var ss3 = document.getElementById("sound-state"); if (ss3) ss3.textContent = "OFF"; }
         if (UI && UI.stopIdleCycle) UI.stopIdleCycle();
         if (UI && UI.clearHighlights) UI.clearHighlights();
@@ -437,7 +443,9 @@
 
     if (detectedAction) {
       var actionMsg = executeAction(detectedAction);
-      if (actionMsg) return Promise.resolve({ text: actionMsg, intent: null, action: detectedAction });
+      if (actionMsg) {
+        return Promise.resolve({ text: actionMsg, intent: detectedIntent, action: detectedAction });
+      }
     }
 
     if (!CFG.OPENROUTER_KEY) {
@@ -667,15 +675,16 @@
     remember("user", text);
     setState(S.THINK);
     hideTranscript();
-    if (A) { A.resume(); A.play("process"); }
+    if (A) { try { A.resume(); } catch(e) {} A.play("process"); }
     var UI = window.JARVIS_UI;
     if (UI && UI.pauseIdleCycle) UI.pauseIdleCycle();
 
     askLLM(text).then(function (result) {
       remember("assistant", result.text);
+      var sceneToShow = result.intent || localIntent(text);
       var didNavigate = false;
-      if (result.intent && UI) {
-        UI.run(result.intent, { fromVoice: true });
+      if (sceneToShow && UI) {
+        UI.run(sceneToShow, { fromVoice: true });
         didNavigate = true;
       }
       setTimeout(function () { speak(result.text); }, didNavigate ? 600 : 100);

@@ -537,28 +537,10 @@
   });
 
   let activeScene = null;
-  var pendingVoiceRun = null;
 
   function run(scene, opts) {
     opts = opts || {};
-
-    if (J.transitioning) {
-      if (opts.fromVoice) {
-        pendingVoiceRun = { scene: scene, opts: opts };
-        var waitForTransition = setInterval(function() {
-          if (!J.transitioning) {
-            clearInterval(waitForTransition);
-            pendingVoiceRun = null;
-            doRun(scene, opts);
-          }
-        }, 100);
-        setTimeout(function() { clearInterval(waitForTransition); pendingVoiceRun = null; }, 3000);
-      }
-      return;
-    }
-
     if (scene === activeScene && !opts.fromVoice && !opts.silent) return;
-
     doRun(scene, opts);
   }
 
